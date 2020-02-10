@@ -1,0 +1,55 @@
+#+title: SHLUG试验性基础设施及应用
+
+* 简介
+SHLUG试验性基础设施及应用（SHLUG Experimental Infrastructure and Application，简称SEIA）是一个运行于用户浏览器（或Node.js）的分布式服务平台，为SHLUG用户提供不依赖于特定中心的服务。每个运行的实例均为一个节点，每个节点均可提供运算、存储和通信能力，通过自组织的方式，实现需要的服务和应用。
+
+** 特点
++ 支持通过浏览器和Node.js运行
++ 节点间可直接或间接通信（通过中继）
++ 无特定中心节点，所有服务和应用的资源（通信、运算和存储）由用户自主提供
+
+** 实现方式
++ 主要使用Haskell实现，通过ghcjs编译为javascript
++ 少量代码直接用javascript实现
++ 使用WebSocket和WebRTC通信
+
+** 使用方法
++ 内嵌到SHLUG网页
+  - 浏览时自动加载
+  - 根据网页不同，会运行不同的服务或应用
++ 通过Node.js运行
+  - 适合长时间运行
+  - 主要用于提供服务
+
+** 可能的应用
+- 交互式表单
+  + 之前的捐款网页
+  + 问卷调查
+- 聊天
+  + 线下活动时，开一个临时的聊天室，不用开微信
+- 内容整合
+  + 微信内容转发（需要其他程序配合）
+  + 邮件列表内容转发
+
+* 整体架构
+SEIA分为执行器、加载器、运行兼容层和主程序四个部分：
++ 执行器（executor） 当SEIA在浏览器运行时，无执行器（即浏览器是执行器）；当在Node.js中运行时，需要提供WebRTC、WebSocket，以及兼容少量DOM API的document对象，因此需要构建一个包含这些的环境用来执行SEIA的其他部分。
++ 加载器（loader）  由于主程序比较大，为了提高用户体验，因此需要通过XHR的方式，从网站下载主程序。此外，下载的主程序会保存下来（本地文件或Indexeddb），下次直接使用。主程序会负责本身的更新。
++ 运行兼容层（rt） 由于部分功能Node.js和浏览器实现的差异较大（例如存储），因此需要为主程序实现一套抽象的API。而这套API通过运行兼容层实现，具体对于Node.js和浏览器，以不同的方式实现。
++ 主程序（app）
+  主程序以Haskell编写，通过ghcjs编译。实现SEIA的主要功能。
+
+实际部署时，加载器和运行兼容层通过`browserify`（或其他工具）打包成`seia-preload.js`，供执行器或浏览器载入。
+
+* 测试（目前状态）
+需要nix环境（版本19.09，其他版本haskell的编译可能需要调整），需要安装了Node.js：
+- 进入环境
+: nix-shell js/overrides.nix -A shell
+- 生成`seia-preload.js`
+: npx browserify js/src/index.js > seia-preload.js
+- 编译主程序
+: nix-build hs/release.nix
+: mkdir -p store/version
+: cp result/bin/seia.jsexe/all.js store/version/seia-1
+- 运行
+: ./js/src/exec.js ./seia-preload.js
