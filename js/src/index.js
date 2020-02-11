@@ -1,5 +1,3 @@
-var SEIA_VERSION = 1;
-
 require('fast-text-encoding');
 
 var rt = require('./rt');
@@ -13,7 +11,13 @@ else {
 
 var loader = require('./loader');
 
-loader.load(document.location.href, SEIA_VERSION,
+var url = document.location.href;
+if ((document.currentScript != null) &&
+    (document.currentScript.src != null)) {
+    url = document.currentScript.src;
+}
+
+loader.load(url, rt.VERSION,
             function (key) {
                 if (typeof require == 'function') {
                     var path = rt.store.get_path(key);

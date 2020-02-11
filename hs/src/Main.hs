@@ -1,6 +1,5 @@
 {-# Language TemplateHaskell #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# Language TypeFamilies #-}
@@ -110,7 +109,7 @@ t_bs s = do
 
 main :: IO ()
 main = do
-  putStrLn "currently main is just trival tests"
+  putStrLn "currently main contains some trival tests"
 
   e <- storeExist "abcd"
   print ("exist: ", e)

@@ -1,5 +1,6 @@
 {-# language ForeignFunctionInterface, JavaScriptFFI #-}
 module SHLUG.Seia.Rt ( isNodeJS
+                     , consoleLog
                      , bs_to_u8a
                      , u8a_to_bs
                      , storeGet
@@ -61,9 +62,24 @@ foreign import javascript unsafe "new Uint8Array(new ArrayBuffer(0))"
 foreign import javascript unsafe "typeof(window.cwd)"
   js_window_cwd_type :: IO JSString
 
+foreign import javascript unsafe "window._rt.VERSION"
+  js_rt_version :: IO Int
+
+{-
+
+global :: Object
+#ifdef ghcjs_HOST_OS
+global = js_window
+foreign import javascript unsafe "$r = window"
+    js_window :: Object
+#else
+global = Object . JSVal . unsafePerformIO $ newIORef 4
+#endif
+-}
+
 consoleLog :: ToJSVal a => a -> JSM ()
--- TODO, console is undefined, why?
 consoleLog a = do
+  -- NOTE: jsg will get object from 'window' object
   console <- jsg "console"
   console ^. js1 "log" a
   return ()
