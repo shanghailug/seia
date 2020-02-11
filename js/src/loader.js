@@ -23,7 +23,48 @@ function load_xhr(url, cb) {
 
     console.log("fetch seia-%d from %s ...", ver, url1);
 
-    // TODO
+    function proc_data(data) {
+        var key = get_key(ver);
+        store.set(key, data, function(err) {
+            if (!err) {
+                cb(key);
+            }
+            else {
+                throw err;
+            }
+        });
+    }
+
+    // TODO, accept gzipped data
+    if ((typeof(window._rt.cwd) == "string") && (u.protocol == 'file:')) {
+        // NOTE: xhr2 not support 'file:', so fallback to fs.readFile
+        p = u.pathname;
+        fs.readFile(p, function(err, res) {
+            if (err) throw err;
+            else proc_data(new Uint8Array(res));
+        })
+    }
+    else {
+        // browser
+        // NOTE:, for 'file:', firefox not accept CORS after firefox 67.
+        // so, use 'python3 -m http.server' to run a trival http server for test.
+        var req = new window.XMLHttpRequest();
+        req.open("GET", url1);
+        req.responseType = 'arraybuffer';
+        req.onreadystatechange = function() {
+            if (req.readyState === 4) {
+                if (req.status === 200) {
+                    var data = req.response;
+                    proc_data(new Uint8Array(data));
+                }
+                else {
+                    throw ("GET fail, status=" + req.status);
+                }
+            }
+        }
+
+        req.send();
+    }
 }
 
 function load(url, ver, cb) {
