@@ -1,1 +1,1 @@
-module.exports = (typeof window.cwd == "string") ? require("./store-fs") : require("./store-idb");
+module.exports = (typeof window._rt.cwd == "string") ? require("./store-fs") : require("./store-idb");

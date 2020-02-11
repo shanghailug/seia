@@ -33,11 +33,12 @@ win.console = console;
 win.XMLHttpRequest = xhr2.XMLHttpRequest;
 win.URL = url.URL;
 
+// cwd
+win._rt = { cwd: process.cwd() };
+
 global.document = doc;
 global.window = win;
 
-// for node
-global.window.cwd = process.cwd();
 
 if (/^file:/.test(href)) {
     console.log("load local file...");

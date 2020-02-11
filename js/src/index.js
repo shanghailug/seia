@@ -1,13 +1,13 @@
 require('fast-text-encoding');
 
+// ensure window._rt exist
+if (typeof(window._rt) != 'object') {
+    window._rt = {};
+}
+
 var rt = require('./rt');
 
-if (typeof(window._rt) == 'object') {
-    Object.assign(window._rt, rt);
-}
-else {
-    window._rt = rt;
-}
+Object.assign(window._rt, rt);
 
 var loader = require('./loader');
 

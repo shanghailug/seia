@@ -59,8 +59,8 @@ foreign import javascript interruptible
 foreign import javascript unsafe "new Uint8Array(new ArrayBuffer(0))"
   js_empty_u8a :: IO Uint8Array
 
-foreign import javascript unsafe "typeof(window.cwd)"
-  js_window_cwd_type :: IO JSString
+foreign import javascript unsafe "typeof(window._rt.cwd)"
+  js_window_rt_cwd_type :: IO JSString
 
 foreign import javascript unsafe "window._rt.VERSION"
   js_rt_version :: IO Int
@@ -107,7 +107,7 @@ bs_to_u8a bs = do
 
 isNodeJS :: JSM Bool
 isNodeJS = do
-  tp <- js_window_cwd_type
+  tp <- js_window_rt_cwd_type
   return $ fromJSString tp == "string"
 
 storeGet :: String -> JSM (Maybe ByteString)
