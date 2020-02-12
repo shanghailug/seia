@@ -1,4 +1,14 @@
-require('fast-text-encoding');
+function u8a_to_utf8(a)
+{
+    if (window.TextDecoder) {
+        var d = new window.TextDecoder();
+        return d.decode(a);
+    }
+    else {
+        // TODO: for IE11, need compatiable
+        throw "TextDecoder not exist";
+    }
+}
 
 // ensure window._rt exist
 if (typeof(window._rt) != 'object') {
@@ -25,7 +35,12 @@ loader.load(url, rt.VERSION,
                 }
                 else {
                     rt.store.get(key, function(err, res) {
-                        if (res) eval(res);
+                        if (res) {
+                            var js = u8a_to_utf8(res);
+                            var s = document.createElement("script");
+                            s.text = js;
+                            document.body.appendChild(s);
+                        }
                         else console.log(err);
                     });
                 }
