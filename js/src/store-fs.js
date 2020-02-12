@@ -30,22 +30,21 @@ function set(key, ary, cb) {
 }
 
 function remove(key, cb) {
-    // cb(bool)
+    // cb(err)
     var p = get_path(key);
     fs.exists(p, function(e) {
         if (e) {
             fs.unlink(p, function(err) {
                 if (err) {
-                    console.log(err);
-                    cb(false);
+                    cb(err);
                 }
                 else {
-                    cb(true);
+                    cb(null);
                 }
             });
         }
         else {
-            cb(true);
+            cb(null);
         }
     });
 }

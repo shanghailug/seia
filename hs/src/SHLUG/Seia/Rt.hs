@@ -54,7 +54,7 @@ foreign import javascript interruptible
 
 foreign import javascript interruptible
   "window._rt.store.remove($1, $c);"
-  store_remove :: JSString -> IO JSVal -- IO Bool
+  store_remove :: JSString -> IO JSVal -- IO TypeOfErr
 
 foreign import javascript unsafe "new Uint8Array(new ArrayBuffer(0))"
   js_empty_u8a :: IO Uint8Array
@@ -135,7 +135,6 @@ storeExist k = do
 storeRemove :: String -> JSM Bool
 storeRemove k = do
   let k' = JSString.pack k
-  r <- store_remove k'
-  r' <- fromJSVal r
+  err <- store_remove k'
 
-  return $ r' == Just True
+  ghcjsPure $ isNull err
