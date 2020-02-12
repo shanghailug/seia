@@ -19,7 +19,7 @@ if ((document.currentScript != null) &&
 
 loader.load(url, rt.VERSION,
             function (key) {
-                if (typeof require == 'function') {
+                if (rt.is_nodejs()) {
                     var path = rt.store.get_path(key);
                     require(path);
                 }
