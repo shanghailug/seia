@@ -68,6 +68,12 @@ function load_xhr(url, cb) {
 }
 
 function load(url, ver, cb) {
+    store.init(function() {
+        do_load(url, ver, cb);
+    });
+}
+
+function do_load(url, ver, cb) {
     var key = get_key(ver);
     console.log("try version %d", ver);
 
@@ -79,7 +85,7 @@ function load(url, ver, cb) {
         }
         else {
             if (ver > 1) {
-                setTimeout(function() { load(url, ver - 1, cb); }, 0);
+                setTimeout(function() { do_load(url, ver - 1, cb); }, 0);
             }
             else {
                 load_xhr(url, cb);
