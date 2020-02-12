@@ -1,3 +1,10 @@
+// init window._rt
+require('./rt');
+
+var loader = require('./loader');
+
+var rt = window._rt;
+
 function u8a_to_utf8(a)
 {
     if (window.TextDecoder) {
@@ -10,16 +17,7 @@ function u8a_to_utf8(a)
     }
 }
 
-// ensure window._rt exist
-if (typeof(window._rt) != 'object') {
-    window._rt = {};
-}
 
-var rt = require('./rt');
-
-Object.assign(window._rt, rt);
-
-var loader = require('./loader');
 
 var url = document.location.href;
 if ((document.currentScript != null) &&
