@@ -69,8 +69,14 @@ function exist(key, cb) {
     fs.exists(p, cb);
 }
 
+function init(cb) {
+    cb(null);
+}
+
 module.exports.get = get;
 module.exports.set = set;
+
+module.exports.init = init;
 
 module.exports.get_path = get_path;
 module.exports.exist = exist;
