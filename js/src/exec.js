@@ -32,6 +32,7 @@ win.RTCPeerConnection = wrtc.RTCPeerConnection;
 win.console = console;
 win.XMLHttpRequest = xhr2.XMLHttpRequest;
 win.URL = url.URL;
+win.JSON = JSON;
 
 // cwd
 win._rt = { cwd: process.cwd() };
