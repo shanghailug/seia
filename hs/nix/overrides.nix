@@ -3,6 +3,15 @@ pkgs: self: super:
   rank1dynamic = pkgs.haskell.lib.dontCheck super.rank1dynamic;
   QuickCheck = pkgs.haskell.lib.dontCheck super.QuickCheck;
 
+  # test deps fail to build
+  base32-z-bytestring = pkgs.haskell.lib.dontCheck super.base32-z-bytestring;
+
+  # for co-log
+  co-log = pkgs.haskell.lib.dontCheck super.co-log;
+  co-log-core = pkgs.haskell.lib.dontCheck super.co-log-core;
+  chronos = pkgs.haskell.lib.dontCheck (self.callPackage ./chronos.nix {});
+  typerep-map = pkgs.haskell.lib.dontCheck super.typerep-map;
+
   # test actually fail, but in rare cast, use anyway
   unicode-show = pkgs.haskell.lib.dontCheck super.unicode-show;
 

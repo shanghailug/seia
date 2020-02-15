@@ -35,7 +35,9 @@ win.URL = url.URL;
 win.JSON = JSON;
 
 // cwd
-win._rt = { cwd: process.cwd() };
+win._rt = {};
+win._rt.cwd = process.cwd();
+win._rt.sid = 0; // TODO from args
 
 global.document = doc;
 global.window = win;

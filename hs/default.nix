@@ -1,7 +1,7 @@
-{ mkDerivation, aeson, base, bytestring, containers, eccrypto
-, exceptions, ghcjs-base, ghcjs-dom, ghcjs-prim, jsaddle, lens
-, reflex, reflex-dom-core, stdenv, text, time, utf8-string
-, unicode-show
+{ mkDerivation, aeson, base, base32-z-bytestring, binary
+, bytestring, containers, eccrypto, exceptions, ghcjs-base
+, ghcjs-dom, ghcjs-prim, jsaddle, lens, random, reflex
+, reflex-dom-core, stdenv, text, time, unicode-show, utf8-string
 }:
 mkDerivation {
   pname = "seia";
@@ -10,9 +10,9 @@ mkDerivation {
   isLibrary = false;
   isExecutable = true;
   executableHaskellDepends = [
-    aeson base bytestring containers eccrypto exceptions ghcjs-base
-    ghcjs-dom ghcjs-prim jsaddle lens reflex reflex-dom-core text time
-    utf8-string unicode-show
+    aeson base base32-z-bytestring binary bytestring containers
+    eccrypto exceptions ghcjs-base ghcjs-dom ghcjs-prim jsaddle lens
+    random reflex reflex-dom-core text time unicode-show utf8-string
   ];
   license = stdenv.lib.licenses.gpl3;
 }

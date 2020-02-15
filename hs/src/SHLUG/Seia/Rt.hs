@@ -1,8 +1,11 @@
 {-# language ForeignFunctionInterface, JavaScriptFFI #-}
+
 module SHLUG.Seia.Rt ( isNodeJS
                      , consoleLog
                      , bs_to_u8a
                      , u8a_to_bs
+                     , rtConf
+                     , RtConf(..)
                      , storeGet
                      , storeSet
                      , storeRemove
@@ -10,7 +13,7 @@ module SHLUG.Seia.Rt ( isNodeJS
 
 import Language.Javascript.JSaddle ( JSM(..)
                                    , JSVal(..)
-                                   , JSString, fromJSString
+                                   , JSString, fromJSString, toJSString
                                    , fromJSVal
                                    , ToJSVal, toJSVal
                                    , isNull
@@ -20,6 +23,8 @@ import Language.Javascript.JSaddle ( JSM(..)
                                    , js, jss, jsf
                                    , js0, js1, js2, jsg, jsg1
                                    )
+
+import Control.Monad.IO.Class (liftIO)
 
 import GHCJS.Buffer ( toByteString, fromByteString
                     , getUint8Array
@@ -39,6 +44,12 @@ import qualified Data.ByteString as BS
 
 import Control.Lens ((^.))
 
+import Data.Text ( Text(..) )
+import qualified Data.Text as T
+import Data.Word ( Word16 )
+
+mainVersion :: Int
+mainVersion = 1
 
 foreign import javascript interruptible
   "window._rt.store.get($1, function (err, res) { $c(err, res); });"
@@ -59,11 +70,18 @@ foreign import javascript interruptible
 foreign import javascript unsafe "new Uint8Array(new ArrayBuffer(0))"
   js_empty_u8a :: IO Uint8Array
 
-foreign import javascript unsafe "typeof(window._rt.cwd)"
-  js_window_rt_cwd_type :: IO JSString
+foreign import javascript unsafe "window._rt.is_nodejs()"
+  js_window_rt_is_nodejs :: IO Bool
 
 foreign import javascript unsafe "window._rt.VERSION"
   js_rt_version :: IO Int
+
+foreign import javascript unsafe "window._rt.preloader_url"
+  js_rt_preloader_url :: IO JSString
+
+foreign import javascript unsafe
+  "if (typeof(window._rt.sid) == 'number') { $r = window._rt.sid; } else { $r = -1; }"
+  js_rt_sid :: IO Int
 
 {-
 
@@ -103,38 +121,66 @@ bs_to_u8a bs = do
   buf' <- ghcjsPure $ getUint8Array buf
   res <- ghcjsPure $ subarray off (off + len) buf'
 
-  if len == 0 then js_empty_u8a else return res
+  if len == 0 then liftIO js_empty_u8a else return res
 
 isNodeJS :: JSM Bool
 isNodeJS = do
-  tp <- js_window_rt_cwd_type
-  return $ fromJSString tp == "string"
+  res <- liftIO js_window_rt_is_nodejs
+  return res
 
-storeGet :: String -> JSM (Maybe ByteString)
+storeGet :: Text -> JSM (Maybe ByteString)
 storeGet k = do
-  let k' = JSString.pack k
-  (err, res) <- store_get_a k'
+  let k' = toJSString k
+  (err, res) <- liftIO $ store_get_a k'
   noErr <- ghcjsPure $ isNull err
   if noErr then Just <$> u8a_to_bs res else return Nothing
 
-storeSet :: String -> ByteString -> JSM Bool
+storeSet :: Text -> ByteString -> JSM Bool
 storeSet k v = do
-  let k' = JSString.pack k
+  let k' = toJSString k
   v' <- bs_to_u8a v
-  err <- store_set_a k' v'
+  err <- liftIO $ store_set_a k' v'
   ghcjsPure $ isNull err
 
-storeExist :: String -> JSM Bool
+storeExist :: Text -> JSM Bool
 storeExist k = do
-  let k' = JSString.pack k
-  r <- store_exist k'
+  let k' = toJSString k
+  r <- liftIO $ store_exist k'
   r' <- fromJSVal r
 
   return $ r' == Just True
 
-storeRemove :: String -> JSM Bool
+storeRemove :: Text -> JSM Bool
 storeRemove k = do
-  let k' = JSString.pack k
-  err <- store_remove k'
+  let k' = toJSString k
+  err <- liftIO $ store_remove k'
 
   ghcjsPure $ isNull err
+
+data RtConf = RtConf
+            { _rt_is_nodejs :: Bool
+            , _rt_sid :: Maybe Word16
+            , _rt_preloader_url :: Text
+            , _rt_main_version :: Int
+            , _rt_version :: Int
+            -- from windw._rt.conf
+            , _rt_conf_turn_server :: [Text]
+            , _rt_conf_fallback_bootstrap_node :: [ByteString]
+            } deriving (Eq, Show)
+
+rtConf :: JSM RtConf
+rtConf = do
+  is_nodejs <- liftIO isNodeJS
+  sid' <- liftIO $ js_rt_sid
+  ver <- liftIO js_rt_version
+  url <- liftIO js_rt_preloader_url
+  --turn_server_list <- jsg "window" ^. js "_rt" ^. js "conf" ^. js "turn_server_list
+  return $ RtConf { _rt_is_nodejs = is_nodejs
+                  , _rt_sid = if sid' < 0 then Nothing else Just (toEnum sid')
+                  , _rt_preloader_url = fromJSString url
+                  , _rt_main_version = mainVersion
+                  , _rt_version = ver
+                  --
+                  , _rt_conf_turn_server = [] -- TODO
+                  , _rt_conf_fallback_bootstrap_node = [] -- TODO
+                  }

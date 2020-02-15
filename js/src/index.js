@@ -25,6 +25,8 @@ if ((document.currentScript != null) &&
     url = document.currentScript.src;
 }
 
+rt.preloader_url = url;
+
 loader.load(url, rt.VERSION,
             function (key) {
                 if (rt.is_nodejs()) {
