@@ -75,7 +75,7 @@ clientNew nid url stT rxT = do
     -- subscribe
     cli ^. js2 "subscribe" topic (fun $ \_ _ (err:_) -> do
       ok <- ghcjsPure $ isNull err
-      consoleLog err
+      --consoleLog ("subscribe", err)
       when ok $ liftIO $ stT MQTTOnline)
     return ())
   -- offline
@@ -86,6 +86,7 @@ clientNew nid url stT rxT = do
              (fun $ \_ _ _ -> liftIO $ stT MQTTConnecting)
   -- message
   cli ^. js2 "on" "message" (fun $ \_ _ (_ : m : _) -> do
+         --consoleLog "message"
          t <- valToText m
          let x = reads $ T.unpack t
          case x of
@@ -100,6 +101,7 @@ clientSend cli (nid, msg) = do
   let payload = show (nid, msg)
 
   cli ^. js2 "publish" topic payload
+  --consoleLog ("publish", topic, payload)
 
   return ()
 

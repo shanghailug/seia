@@ -22,6 +22,7 @@ import qualified Data.ByteString.UTF8 as UTF8
 import Language.Javascript.JSaddle( askJSM
                                   , JSM(..)
                                   , JSContextRef
+                                  , MonadJSM(..)
                                   , liftJSM
                                   , syncPoint
                                   , runJSM
@@ -40,6 +41,8 @@ import qualified System.IO as IO
 import Control.Monad (forever, when, join)
 import Control.Monad.IO.Class (liftIO, MonadIO(..))
 
+import Control.Monad.Fix (MonadFix(..))
+
 import qualified Data.Text as T
 import Data.Text (Text(..))
 
@@ -53,8 +56,15 @@ import Reflex.Dom.Core
 import Control.Lens
 import Control.Monad.Catch (MonadCatch, catch) -- JSM is MonadCatch
 
-main :: IO ()
-main = mainWidget $ do
+app :: ( Reflex t
+       , TriggerEvent t m
+       , PerformEvent t m
+       , MonadIO (Performable m)
+       , MonadHold t m
+       , MonadJSM m
+       , MonadFix m
+       ) => m ()
+app = do
   liftIO $ putStrLn "start"
   rt_conf <- liftJSM rtConf
   liftIO $ putStrLn $ "rt_conf = " ++ show rt_conf
@@ -63,3 +73,9 @@ main = mainWidget $ do
 
   liftIO $ putStrLn $ "conf = " ++ show t
   mqttLoopbackTest
+
+main :: IO ()
+main = do
+  mainWidget app
+  -- for nodejs, not quit
+  liftIO $ forever $ threadDelay 5000000

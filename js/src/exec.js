@@ -39,6 +39,8 @@ win._rt = {};
 win._rt.cwd = process.cwd();
 win._rt.sid = 0; // TODO from args
 
+win._rt.mqtt = require("mqtt");
+
 global.document = doc;
 global.window = win;
 

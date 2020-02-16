@@ -13,7 +13,9 @@ if (typeof(window._rt) != 'object') {
 
 window._rt.VERSION = VERSION;  // this is RtConf._rt_conf_rt_version
 window._rt.is_nodejs = is_nodejs;
-window._rt.mqtt = require('mqtt');
+
+// NOTE: mqtt is set inside ghcjs, or at external exec.js
+//window._rt.mqtt = require('mqtt');
 window._rt.store = require('./store');
 
 // runtime config
