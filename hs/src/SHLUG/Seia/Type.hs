@@ -26,12 +26,24 @@ import qualified Data.ByteString.Base32.Z as B32
 import qualified Data.ByteString.Lazy as BS.Lazy
 import Data.Char (chr, ord)
 
+import qualified Text.ParserCombinators.ReadP as ReadP
+import qualified Text.ParserCombinators.ReadPrec as ReadPrec
+import Text.Read(Read(..))
+
 type PubKey = ByteString
 
 newtype UID = UID PubKey deriving (Eq, Ord, Generic)
 instance Binary UID
 instance Show UID where
   show (UID uid) = C8.unpack $ B32.encode uid
+
+instance Read UID where
+  readPrec = do
+    s <- ReadPrec.lift $ ReadP.count 52 ReadP.get
+    let bs = C8.pack s
+    case B32.decode bs of
+      Right x -> return (UID x)
+      Left  x -> fail x
 
  -- first 32 byte is uid, last 2 byte is sid, big endian
 newtype NID = NID ShortByteString deriving (Eq, Ord, Generic)
@@ -42,6 +54,13 @@ instance Show NID where
   show nid = show uid ++ ":" ++ show sid
        where uid = getUID nid
              sid = getSID nid
+
+instance Read NID where
+  readPrec = do
+    uid <- readPrec
+    ReadPrec.lift (ReadP.char ':')
+    sid <- readPrec
+    return $ toNID uid sid
 
 nid0 :: NID
 nid0 = NID $ BSS.pack $ replicate 34 0

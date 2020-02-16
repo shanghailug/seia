@@ -10,6 +10,7 @@ module Main where
 import SHLUG.Seia.Conf
 import SHLUG.Seia.Rt
 import SHLUG.Seia.Type
+import SHLUG.Seia.Network.MQTT
 
 import Text.Show.Unicode
 
@@ -61,3 +62,4 @@ main = mainWidget $ do
   t <- sample conf
 
   liftIO $ putStrLn $ "conf = " ++ show t
+  mqttLoopbackTest
