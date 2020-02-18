@@ -90,7 +90,7 @@ init' key val0 = do
 
 -- config for conf itsel or global conf
 data Conf = Conf { _conf_turn_server :: [Text]
-                 , _conf_bootstrap_node :: [ByteString]
+                 , _conf_bootstrap_node :: [NID]
                  , _conf_nid :: NID
                  , _conf_priv_key :: ByteString
                  } deriving (Eq, Show)
@@ -101,7 +101,7 @@ confB :: ( Reflex t
             , MonadHold t m
             , MonadFix m
             , MonadJSM m) =>
-            Event t [Text] -> Event t [ByteString] ->
+            Event t [Text] -> Event t [NID] ->
             m (Behavior t Conf)
 confB evSetTurnServer evSetBootstrapNode = do
   rt_conf <- liftJSM rtConf

@@ -11,6 +11,8 @@ module SHLUG.Seia.Rt ( isNodeJS
                      , storeRemove
                      , storeExist ) where
 
+import SHLUG.Seia.Type
+
 import Language.Javascript.JSaddle ( JSM(..)
                                    , JSVal(..)
                                    , JSString, fromJSString, toJSString
@@ -165,7 +167,7 @@ data RtConf = RtConf
             , _rt_version :: Int
             -- from windw._rt.conf
             , _rt_conf_turn_server :: [Text]
-            , _rt_conf_fallback_bootstrap_node :: [ByteString]
+            , _rt_conf_fallback_bootstrap_node :: [NID]
             } deriving (Eq, Show)
 
 rtConf :: JSM RtConf
