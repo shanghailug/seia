@@ -11,6 +11,7 @@ import SHLUG.Seia.Conf
 import SHLUG.Seia.Rt
 import SHLUG.Seia.Type
 import SHLUG.Seia.Network.MQTT
+import SHLUG.Seia.Msg
 
 import Text.Show.Unicode
 
@@ -72,6 +73,9 @@ app = do
   t <- sample conf
 
   liftIO $ putStrLn $ "conf = " ++ show t
+
+  liftIO $ msgTrivalTest (_conf_nid t) (_conf_priv_key t)
+
   mqttLoopbackTest
 
 main :: IO ()

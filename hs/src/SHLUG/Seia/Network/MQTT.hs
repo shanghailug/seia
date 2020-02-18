@@ -81,6 +81,9 @@ clientNew nid url stT rxT = do
   -- offline
   cli ^. js2 "on" "offline"
              (fun $ \_ _ _ -> liftIO $ stT MQTTOffline)
+  -- close
+  cli ^. js2 "on" "close"
+             (fun $ \_ _ _ -> liftIO $ stT MQTTOffline)
   -- reconnect
   cli ^. js2 "on" "reconnect"
              (fun $ \_ _ _ -> liftIO $ stT MQTTConnecting)

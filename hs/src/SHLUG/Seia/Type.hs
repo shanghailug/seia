@@ -2,7 +2,6 @@
 
 module SHLUG.Seia.Type
   ( nid0
-  , MsgMeta1(..)
   , getUID, getSID, toNID
   , NID(..), UID(..)
   ) where
@@ -13,6 +12,7 @@ import qualified Data.Binary.Put as Put
 import qualified Data.Binary.Get as Get
 
 import Data.Typeable
+import Data.Data
 import GHC.Generics
 import Data.Int
 
@@ -32,7 +32,7 @@ import Text.Read(Read(..))
 
 type PubKey = ByteString
 
-newtype UID = UID PubKey deriving (Eq, Ord, Generic)
+newtype UID = UID PubKey deriving (Eq, Ord, Generic, Typeable, Data)
 instance Binary UID
 instance Show UID where
   show (UID uid) = C8.unpack $ B32.encode uid
@@ -46,9 +46,13 @@ instance Read UID where
       Left  x -> fail x
 
  -- first 32 byte is uid, last 2 byte is sid, big endian
-newtype NID = NID ShortByteString deriving (Eq, Ord, Generic)
+newtype NID = NID ShortByteString deriving (Eq, Ord, Generic, Typeable, Data)
 
-instance Binary NID
+instance Binary NID where
+   put t = Put.putByteString $ nid2bin t
+   get = do
+     bin <- Get.getByteString 34
+     return $ bin2nid bin
 
 instance Show NID where
   show nid = show uid ++ ":" ++ show sid
@@ -82,29 +86,3 @@ nid2bin (NID nid) = BSS.fromShort nid
 
 bin2nid :: ByteString -> NID
 bin2nid bs = NID $ BSS.toShort bs
-
--- by order
--- ver:1, kind:1, src: nid:(32+2), dst: nid:(32+2), epoch:8, payload(N), signature: 64
-
-data MsgMeta1 = MkMsgMeta1 { ver :: Word8
-                           , kind :: Char -- utf8 char, 1~4 byte
-                           , src :: NID
-                           , dst :: NID
-                           , epoch :: Word64 -- in ms
-                           } deriving (Show, Eq, Ord)
-
-instance Binary MsgMeta1 where
-  put t = do
-      Put.putWord8 $ ver t
-      put $ kind t
-      Put.putByteString $ nid2bin $ src t
-      Put.putByteString $ nid2bin $ dst t
-      Put.putWord64be $ epoch t
-
-  get = do
-      v <- Get.getWord8
-      k <- get
-      s <- bin2nid <$> Get.getByteString 34
-      d <- bin2nid <$> Get.getByteString 34
-      e <- Get.getWord64be
-      return $ MkMsgMeta1 { ver = v, kind = k, src = s, dst = d, epoch = e }
