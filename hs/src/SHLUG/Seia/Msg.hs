@@ -5,9 +5,10 @@ module SHLUG.Seia.Msg
   ( Msg(..)
   , msgType, msgType'
   , msgVerify
-  , msgResign
+  , msgSign
   , emptySign
   , msgTrivalTest
+  , msgIsHB
   ) where
 
 import SHLUG.Seia.Type
@@ -36,6 +37,7 @@ data MsgSignType = MsgSignInvalid |
                    MsgSign1 |
                    MsgSign2 deriving (Eq, Show)
 type MsgType = Char
+
 
 _mt_invalid = '\0'
 _mt_hb      = '\1'
@@ -75,6 +77,9 @@ msgType' s = case UTF8.decode s of
              Nothing     -> (_mt_invalid, -1)
              Just (c, l) -> (c, l)
 
+msgIsHB :: ByteString -> Bool
+msgIsHB x = let tp = msgType x in tp == _mt_hb
+
 msgType :: ByteString -> Char
 msgType = fst . msgType'
 
@@ -107,8 +112,8 @@ msgVerify x = let
          Left  _ -> False
 
 
-msgResign :: ByteString -> ByteString -> ByteString
-msgResign sk s = let
+msgSign :: ByteString -> ByteString -> ByteString
+msgSign sk s = let
   (tp, clen) = msgType' s
   key = SecKeyBytes sk
   sign1 = let s1 = BS.take (clen + 34 + 8) s
@@ -181,7 +186,7 @@ msgT1 sk m = do
   let b1 = BS.Lazy.toStrict $ encode m
   putStrLn $ "enc = " ++ show b1
   putStrLn $ "vfy = " ++ show (msgVerify b1)
-  let b2 = msgResign sk b1
+  let b2 = msgSign sk b1
   putStrLn $ "sgn = " ++ show b2
   putStrLn $ "vfy = " ++ show (msgVerify b2)
   let m1 = decode $ BS.Lazy.fromStrict b1 :: Msg
