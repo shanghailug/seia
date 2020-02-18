@@ -54,7 +54,7 @@ data MQTTState = MQTTOffline |
                deriving (Eq, Show)
 
 data MQTT t = MkMQTT { _mqtt_state :: Dynamic t MQTTState
-                     , _mqtt_rx :: Event t (NID, ByteString)
+                     , _mqtt_rx :: Event t ByteString
                      }
 
 topicPrefix :: Text
@@ -64,7 +64,7 @@ topicGen :: NID -> Text
 topicGen nid = topicPrefix <> T.pack "/" <> T.pack (show nid)
 
 clientNew :: NID -> Text -> (MQTTState -> IO ()) ->
-             ((NID, ByteString) -> IO ()) -> JSM JSVal
+             (ByteString -> IO ()) -> JSM JSVal
 clientNew nid url stT rxT = do
   let topic = topicGen nid
   liftIO $ stT MQTTConnecting
@@ -98,10 +98,10 @@ clientNew nid url stT rxT = do
 
   return cli
 
-clientSend :: JSVal -> (NID, ByteString) -> JSM ()
-clientSend cli (nid, msg) = do
+clientSend :: JSVal -> NID -> ByteString -> JSM ()
+clientSend cli nid msg = do
   let topic = topicGen nid
-  let payload = show (nid, msg)
+  let payload = show msg
 
   cli ^. js2 "publish" topic payload
   --consoleLog ("publish", topic, payload)
@@ -123,7 +123,7 @@ mqttNew c = do
   cli <- liftJSM $ clientNew (_mqtt_nid c) (_mqtt_url c) stT rxT
 
   performEvent_ $ ffor (_mqtt_tx c) $
-                       \ev -> liftJSM $ clientSend cli ev
+                       \(nid, msg) -> liftJSM $ clientSend cli nid msg
 
   return MkMQTT { _mqtt_state = stD
                 , _mqtt_rx = rxE
