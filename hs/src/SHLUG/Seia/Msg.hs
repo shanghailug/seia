@@ -8,7 +8,8 @@ module SHLUG.Seia.Msg
   , msgSign
   , emptySign
   , msgTrivalTest
-  , msgIsHB
+  , msgIsHB, msgIsGeneral, msgIsOGM, msgIsRTC
+  , msgIsSigned
   ) where
 
 import SHLUG.Seia.Type
@@ -42,13 +43,13 @@ type MsgType = Char
 _mt_invalid = '\0'
 _mt_hb      = '\1'
 _mt_ogm     = '\2'
-_mt_signed  = '\3'
+_mt_general = '\3'
 _mt_rtc     = '\4'
 
 msgSignType :: MsgType -> MsgSignType
 msgSignType t | t == _mt_hb                = MsgSignValid
               | t == _mt_ogm               = MsgSign1
-              | elem t [_mt_signed, _mt_rtc]  = MsgSign2
+              | elem t [_mt_general, _mt_rtc]  = MsgSign2
               | True                       = MsgSignInvalid
 
 
@@ -79,6 +80,18 @@ msgType' s = case UTF8.decode s of
 
 msgIsHB :: ByteString -> Bool
 msgIsHB x = let tp = msgType x in tp == _mt_hb
+
+msgIsGeneral :: ByteString -> Bool
+msgIsGeneral x = let tp = msgType x in tp == _mt_general
+
+msgIsRTC :: ByteString -> Bool
+msgIsRTC x = msgType x == _mt_rtc
+
+msgIsOGM :: ByteString -> Bool
+msgIsOGM x = msgType x == _mt_ogm
+
+msgIsSigned :: ByteString -> Bool
+msgIsSigned x = let st = msgSignType (msgType x) in st == MsgSign2
 
 msgType :: ByteString -> Char
 msgType = fst . msgType'
@@ -161,7 +174,7 @@ instance Binary Msg where
                                          , _msg_sign = sign
                                          , _msg_hop = hop
                                          }
-             _ | elem tp [_mt_signed, _mt_rtc] -> do
+             _ | elem tp [_mt_general, _mt_rtc] -> do
                 src <- get
                 dst <- get
                 epoch <- Get.getWord64be
@@ -210,7 +223,7 @@ msgTrivalTest nid sk = do
   msgT1 sk m1
 
   t2 <- getEpoch
-  let m2 = MsgSigned _mt_signed nid nid0 t2 (BS.Lazy.toStrict $ encode m1)
+  let m2 = MsgSigned _mt_general nid nid0 t2 (BS.Lazy.toStrict $ encode m1)
                      emptySign
   msgT1 sk m2
 
