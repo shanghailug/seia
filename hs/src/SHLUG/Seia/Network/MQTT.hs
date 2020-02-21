@@ -2,6 +2,9 @@
 
 module SHLUG.Seia.Network.MQTT ( mqttNew
                                , mqttLoopbackTest
+                               , MQTTConf(..)
+                               , MQTT(..)
+                               , MQTTState(..)
                                ) where
 
 import SHLUG.Seia.Type
