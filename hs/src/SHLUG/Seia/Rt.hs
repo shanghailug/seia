@@ -4,6 +4,8 @@ module SHLUG.Seia.Rt ( isNodeJS
                      , consoleLog
                      , bs_to_u8a
                      , u8a_to_bs
+                     , jsval_to_u8a
+                     , u8a_to_jsval
                      , rtConf
                      , RtConf(..)
                      , storeGet
@@ -85,6 +87,15 @@ foreign import javascript unsafe
   "if (typeof(window._rt.sid) == 'number') { $r = window._rt.sid; } else { $r = -1; }"
   js_rt_sid :: IO Int
 
+foreign import javascript unsafe "$1"
+  u8a_to_jsval :: Uint8Array -> IO JSVal
+
+foreign import javascript unsafe "$1"
+  jsval_unsafe_cast_to_u8a :: JSVal -> IO Uint8Array
+
+foreign import javascript unsafe "$1 instanceof Uint8Array"
+  jsval_is_u8a :: JSVal -> IO Bool
+
 {-
 
 global :: Object
@@ -124,6 +135,13 @@ bs_to_u8a bs = do
   res <- ghcjsPure $ subarray off (off + len) buf'
 
   if len == 0 then liftIO js_empty_u8a else return res
+
+jsval_to_u8a :: JSVal -> JSM (Maybe Uint8Array)
+jsval_to_u8a v = do
+  x <- liftIO $ jsval_is_u8a v
+  if x then Just <$> liftIO (jsval_unsafe_cast_to_u8a v)
+       else return Nothing
+
 
 isNodeJS :: JSM Bool
 isNodeJS = do
