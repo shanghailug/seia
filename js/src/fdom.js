@@ -4,16 +4,17 @@ function Location() {
 function Window() {
 }
 
-function DocumentFragment()
-{
-}
-
 function Node(doc) {
     this.ownerDocument = doc;
     this.appendChild = function() {
     };
 
     this.innerHTML = "";
+}
+
+function DocumentFragment(doc)
+{
+    Node.call(this, doc);
 }
 
 function Document() {
@@ -26,7 +27,7 @@ function Document() {
     };
 
     this.createDocumentFragment = function() {
-        var f = new DocumentFragment();
+        var f = new DocumentFragment(this);
         return f;
     }
 
