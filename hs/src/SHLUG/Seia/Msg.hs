@@ -14,8 +14,8 @@ module SHLUG.Seia.Msg
   ) where
 
 import SHLUG.Seia.Type
+import SHLUG.Seia.Helper
 
-import Data.Time.Clock.POSIX (getPOSIXTime)
 import Data.ByteString (ByteString(..))
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BS.Lazy
@@ -210,33 +210,28 @@ msgT1 sk m = do
   putStrLn $ ">>  = " ++ show m2
   putStrLn $ "eq  = " ++ show (decode (encode m2) == m2)
 
-getEpoch :: IO Word64
-getEpoch = do
-  t <- getPOSIXTime
-  return $ floor $ t * 1000
-
 msgFillEpoch :: Msg -> IO Msg
 msgFillEpoch msg = case msg of
                      MsgSigned {} ->
-                       getEpoch >>= \e -> return msg { _msg_epoch = e }
+                       getEpochMs >>= \e -> return msg { _msg_epoch = e }
                      MsgOGM {} ->
-                       getEpoch >>= \e -> return msg { _msg_epoch = e }
+                       getEpochMs >>= \e -> return msg { _msg_epoch = e }
                      _ -> return msg
 
 msgTrivalTest :: NID -> ByteString -> IO ()
 msgTrivalTest nid sk = do
   msgT1 sk $ MsgHB '\1'
 
-  t1 <- getEpoch
+  t1 <- getEpochMs
   let m1 = MsgOGM _mt_ogm nid t1 emptySign 123
   msgT1 sk m1
 
-  t2 <- getEpoch
+  t2 <- getEpochMs
   let m2 = MsgSigned _mt_general nid nid0 t2 (BS.Lazy.toStrict $ encode m1)
                      emptySign
   msgT1 sk m2
 
-  t3 <- getEpoch
+  t3 <- getEpochMs
   let m3 = MsgSigned _mt_rtc nid nid0 t3 (BS.Lazy.toStrict $ encode m2)
                      emptySign
   msgT1 sk m3
