@@ -143,10 +143,15 @@ connManNew c = do
   (rxPreE, rxPreT) <- newTriggerEvent
   -- current state of Conn
   (stE, stT) <- newTriggerEvent
-  stD <- accumDyn (\m (nid, st) -> Map.insert nid st m) Map.empty stE
+  stD <- accumDyn (\m (nid, st) -> if (st == ConnTimeout) || (st == ConnFail)
+                                   then Map.delete nid m
+                                   else Map.insert nid st m
+                  ) Map.empty stE
+
   -- current route table
   (rtblE, rtblT) <- newTriggerEvent
   rtblB <- accumB (\m (nid, entry) -> Map.insert nid entry m) Map.empty rtblE
+
   -- set turn server & set bootstrap node
   (set_ts_E, set_ts_T) <- newTriggerEvent
   (set_bn_E, set_bn_T) <- newTriggerEvent
@@ -154,14 +159,21 @@ connManNew c = do
   (conn_cb_E, conn_cb_T) <- newTriggerEvent
 
   -- TODO, clear unused callback
-  conn_cb_B <- accumB (\m (nid, conn) -> Map.insert nid conn m)
-                      Map.empty conn_cb_E
+  conn_cb_B <- accumB (\m (nid, conn') -> case conn' of
+                                          Just conn -> Map.insert nid conn m
+                                          Nothing -> Map.delete nid m
+                      ) Map.empty conn_cb_E
+
+  performEvent_ $ ffor stE $ \(nid, st) ->
+    when ((st == ConnTimeout) || (st == ConnFail)) $
+         liftIO $ conn_cb_T (nid, Nothing)
 
   -- TODO, filter from rxPreE, only left MsgSigned & dst is self
   let rxE = never
 
   -- utils
   let conn_msg_sign = msgSign (_conf_priv_key conf)
+
 
   ------------------ mqtt rx
   performEvent_ $ ffor mqtt_rxE $ \raw -> do
@@ -175,6 +187,14 @@ connManNew c = do
 
            liftIO $ rxPreT raw
     return ()
+
+  ----------- monitor
+  tick5 <- liftIO getCurrentTime >>= tickLossy 5
+  performEvent_ $ ffor tick5 $ \_ -> do
+    st <- sample $ current stD
+    liftIO $ printf "st -> %s\n" (show st)
+    cb <- sample conn_cb_B
+    liftIO $ printf "conn_cb -> %s\n" (show $ Map.keys cb)
 
   ---------------------------- route
   let route dst raw = do
@@ -242,7 +262,7 @@ connManNew c = do
                      , _conn_nid_exist = Map.member src rtbl -- req node exist?
                      }
 
-                   liftIO $ conn_cb_T (src, conn)
+                   liftIO $ conn_cb_T (src, Just conn)
                    (_conn_rtc_rx_cb conn) (_msg_epoch msg, _msg_payload msg)
                    return ()
 
@@ -296,7 +316,7 @@ connManNew c = do
                                  , _conn_msg_sign = conn_msg_sign
                                  , _conn_nid_exist = False -- always F for client
                                  }
-      liftIO $ conn_cb_T (dst, conn)
+      liftIO $ conn_cb_T (dst, Just conn)
 
     return ()
   ---------------------- trace stE change
