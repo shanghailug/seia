@@ -10,6 +10,7 @@ module SHLUG.Seia.Msg
   , msgTrivalTest
   , msgIsHB, msgIsGeneral, msgIsOGM, msgIsRTC
   , msgIsSigned
+  , msgFillEpoch
   ) where
 
 import SHLUG.Seia.Type
@@ -213,6 +214,14 @@ getEpoch :: IO Word64
 getEpoch = do
   t <- getPOSIXTime
   return $ floor $ t * 1000
+
+msgFillEpoch :: Msg -> IO Msg
+msgFillEpoch msg = case msg of
+                     MsgSigned {} ->
+                       getEpoch >>= \e -> return msg { _msg_epoch = e }
+                     MsgOGM {} ->
+                       getEpoch >>= \e -> return msg { _msg_epoch = e }
+                     _ -> return msg
 
 msgTrivalTest :: NID -> ByteString -> IO ()
 msgTrivalTest nid sk = do
