@@ -13,6 +13,7 @@ import SHLUG.Seia.Type
 import SHLUG.Seia.Msg
 
 import SHLUG.Seia.Rt
+import SHLUG.Seia.Helper
 
 import Data.ByteString ( ByteString(..) )
 import Data.Text (Text(..))
@@ -198,8 +199,11 @@ createConnection c pcRef dcRef remoteSdp = do
      e <- DOM.event
      dc <- DOME.getChannel e
      liftJSM $ do
-       liftIO $ printf "%s: on data channel" (show $ _conn_local c)
+       -- NOTE: should setup dc(callback) as soon as possible
+       -- should not insert any IO op between
        setupDataChannel c dcRef dc
+       liftIO $ printf "  %s: on data channel\n" (show $ _conn_local c)
+       checkDC c dc
 
   dc' <- if isOffer
          then Just <$> DOM.createDataChannel pc "ch0" Nothing
@@ -229,6 +233,13 @@ createConnection c pcRef dcRef remoteSdp = do
   then sendRTCMsg c $ MkRTCSignal RTCAnswer sdp'
   else sendRTCMsg c $ MkRTCSignal RTCOffer sdp'
 
+checkDC :: ConnConf -> DOM.RTCDataChannel -> JSM ()
+checkDC c dc = do
+  st <- RTCDataChannel.getReadyState dc
+  when (st == Enums.RTCDataChannelStateOpen) $
+       _conn_st_cb c $ ConnReady (_conn_type c)
+  liftIO $ printf " dc st -> %s\n" (show st)
+  return ()
 
 onRTCRx :: ConnConf ->
            IORef (Maybe DOM.RTCPeerConnection) ->
@@ -236,7 +247,7 @@ onRTCRx :: ConnConf ->
            (Word64, ByteString) -> JSM ()
 onRTCRx c pcRef dcRef (epoch, raw) = do
   let msg = decode $ fromStrict raw :: RTCMsg
-  liftIO $ printf "on rtc rx: %s\n" (show msg) >> IO.hFlush IO.stdout
+  liftIO $ printf "    on rtc rx: %s\n" (sss 50 msg) >> IO.hFlush IO.stdout
 
   pc' <- liftIO $ readIORef pcRef
   case msg of
@@ -276,12 +287,11 @@ onRTCRx c pcRef dcRef (epoch, raw) = do
 setupDataChannel :: ConnConf -> IORef (Maybe DOM.RTCDataChannel) ->
                     DOM.RTCDataChannel -> JSM ()
 setupDataChannel c dcRef dc = do
-  liftIO $ atomicWriteIORef dcRef (Just dc)
   let nid = _conn_local c
 
   DOM.on dc RTCDataChannel.open $ do
     liftJSM $ (_conn_st_cb c) (ConnReady (_conn_type c))
-    liftIO $ printf "%s: data channel open\n" (show nid)
+    liftIO $ printf "  %s: data channel open\n" (show nid)
 
   DOM.on dc RTCDataChannel.message $ do
     ev <- DOM.event
@@ -300,6 +310,8 @@ setupDataChannel c dcRef dc = do
   DOM.on dc RTCDataChannel.closeEvent $ do
     liftJSM $ _conn_st_cb c $ ConnFail
     liftIO $ printf "%s: data channel closed\n" (show nid)
+
+  liftIO $ atomicWriteIORef dcRef (Just dc)
 
   return ()
 

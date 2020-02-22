@@ -11,7 +11,7 @@ import SHLUG.Seia.Network.Conn
 import SHLUG.Seia.Network.MQTT
 import SHLUG.Seia.Conf
 import SHLUG.Seia.Rt
-
+import SHLUG.Seia.Helper
 
 import Data.Map.Strict (Map(..))
 import qualified Data.Map.Strict as Map
@@ -178,7 +178,7 @@ connManNew c = do
 
   ---------------------------- route
   let route dst raw = do
-        liftIO $ printf "route msg to %s\n" (show dst)
+        liftIO $ printf "  route msg to %s\n" (show dst)
 
         rtbl <- sample rtblB
         mqttSt <- sample $ current mqtt_stateD
@@ -192,17 +192,16 @@ connManNew c = do
           liftIO $ printf "TODO" -- use conn_cb_B
         else if (mqttSt == MQTTOnline) && msgIsRTC raw
              then do
-               liftIO $ printf "MQTT is online, route RTC message via MQTT\n"
+               liftIO $ printf "    MQTT is online, route RTC message via MQTT\n"
                liftIO $ mqtt_txT (dst, raw)
              else do
-               liftIO $ printf "no route, can not relay via MQTT, drop\n"
+               liftIO $ printf "    no route, can not relay via MQTT, drop\n"
 
         return ()
 
   performEvent_ $ ffor rxPreE $ \m -> do
-
     let msg = decode (fromStrict m) :: Msg
-    liftIO $ printf "process rxPre: %s\n" (show msg)
+    liftIO $ printf "    process rxPre: %s\n" (sss 50 msg)
     stMap <- sample $ current stD
     ts <- _conf_turn_server <$> sample (_conf c)
     rtbl <- sample rtblB
@@ -268,7 +267,7 @@ connManNew c = do
       let nl' = filter ff nl
 
       when (length nl' == 0) $ do
-        liftIO $ putStrLn "not enough bootstrap candidate"
+        liftIO $ putStrLn "  not enough bootstrap candidate"
         fail "not enough bootstrap candidate"
 
       let dst = head nl' -- TODO, here just select first node
