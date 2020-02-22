@@ -87,9 +87,13 @@ init' key val0 = do
     Nothing -> do confSet _c_PREFIX key $ toStrict $ Bin.encode val0
                   (Bin.decode . fromStrict . fromJust) <$> confGet _c_PREFIX key
 
-default_bs :: [NID]
-default_bs = map read $
+default_bn :: [NID]
+default_bn = map read $
              [ "9dp3gc3r7gngw3xhcs69bwyj3xaa75zodx5huw7rksyjs8in9qyy:0"
+             ]
+default_ts :: [Text]
+default_ts = map T.pack
+             [ "stun:stun.stunprotocol.org"
              ]
 
 -- config for conf itsel or global conf
@@ -116,8 +120,8 @@ confB evSetTurnServer evSetBootstrapNode = do
          Just x  -> return x
   let nid = toNID uid sid
 
-  ts <- liftJSM $ init' _c_TURN_SERVER []
-  bn <- liftJSM $ init' _c_BOOTSTRAP_NODE default_bs
+  ts <- liftJSM $ init' _c_TURN_SERVER default_ts
+  bn <- liftJSM $ init' _c_BOOTSTRAP_NODE default_bn
 
   let ts' = ts ++ _rt_conf_turn_server rt_conf
   let bn' = bn ++ _rt_conf_fallback_bootstrap_node rt_conf
