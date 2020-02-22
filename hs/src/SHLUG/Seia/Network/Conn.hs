@@ -30,7 +30,7 @@ import Control.Monad.IO.Class (MonadIO(..), liftIO)
 import Control.Monad.Catch (MonadCatch, catch)
 import Control.Exception (SomeException)
 import Control.Lens ((^.))
-import Control.Monad (when, forM_)
+import Control.Monad (when, unless, forM_)
 
 import Control.Monad.Trans.Maybe (runMaybeT, MaybeT(..))
 
@@ -47,6 +47,7 @@ import Reflex
 
 import Language.Javascript.JSaddle ( JSM(..), MonadJSM(..)
                                    , liftJSM
+                                   , askJSM, runJSM
                                    , JSException(..)
                                    , JSVal(..), toJSVal
                                    , toJSString
@@ -289,6 +290,35 @@ onRTCRx c pcRef dcRef tsRef (epoch, raw) = do
 
   return ()
 
+procMsg :: ConnConf -> IORef Int64 -> ByteString -> JSM ()
+procMsg c tsRef payload = do
+  -- update timestamp
+  liftIO $ getEpochMs >>= atomicWriteIORef tsRef
+  -- todo, verify
+  runMaybeT $ do
+    unless (msgVerify payload) $ fail "verify fail"
+    when (msgIsHB payload) $ fail "heart beat"
+
+    liftJSM $ _conn_rx_cb c $ payload
+
+  return ()
+
+heartbeatChecker :: JSVal -> ConnConf -> IORef Int64 -> DOM.RTCDataChannel -> JSM ()
+heartbeatChecker pkt c tsRef dc = do
+  -- delay 250ms
+  liftIO $ threadDelay $ 250 * 1000 -- 250ms
+  -- send heart beat
+  RTCDataChannel.sendView dc (DOM.ArrayBufferView pkt)
+  -- delay 250
+  liftIO $ threadDelay $ 250 * 1000
+  -- check
+  now <- liftIO getEpochMs
+  ts <- liftIO $ readIORef tsRef
+
+  if now - ts > 1000
+  then (_conn_st_cb c) ConnTimeout
+  else heartbeatChecker pkt c tsRef dc
+
 setupDataChannel :: ConnConf -> IORef (Maybe DOM.RTCDataChannel) ->
                     IORef Int64 ->
                     DOM.RTCDataChannel -> JSM ()
@@ -300,17 +330,24 @@ setupDataChannel c dcRef tsRef dc = do
     t <- liftIO $ getEpochMs -- Int
     liftIO $ atomicWriteIORef tsRef t
     liftIO $ printf "  %s: data channel open\n" (show nid)
+    ctx <- askJSM
+
+    let bs = toStrict $ encode $ msgHB
+    pkt <- liftJSM $ bs_to_u8a bs >>= u8a_to_jsval
+
+    liftIO $ forkIO $ runJSM (heartbeatChecker pkt c tsRef dc) ctx
+    return ()
 
   DOM.on dc RTCDataChannel.message $ do
     ev <- DOM.event
     dat <- DOM.getData ev
 
-    u8a' <- liftJSM $ jsval_to_u8a dat
-    case u8a' of
-      Just u8a -> do bs <- liftIO $ u8a_to_bs u8a
-                     -- todo, verify
-                     liftJSM $ _conn_rx_cb c $ bs
-      Nothing -> liftIO $ printf "%s: recv msg is not u8a, drop\n" (show nid)
+    bs' <- liftJSM $ jsval_to_bs dat
+    case bs' of
+      Just bs -> liftJSM $ procMsg c tsRef bs
+      Nothing -> do
+        liftIO $ printf "%s: recv msg is not u8a/ab, drop\n" (show nid)
+        liftJSM $ consoleLog dat
 
   DOM.on dc RTCDataChannel.error $ do
     liftIO $ printf "%s: data channel err\n" (show nid)

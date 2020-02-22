@@ -4,7 +4,7 @@ module SHLUG.Seia.Rt ( isNodeJS
                      , consoleLog
                      , bs_to_u8a
                      , u8a_to_bs
-                     , jsval_to_u8a
+                     , jsval_to_bs
                      , u8a_to_jsval
                      , rtConf
                      , RtConf(..)
@@ -41,6 +41,9 @@ import JavaScript.TypedArray ( TypedArray(..)
                              , buffer, byteLength, byteOffset
                              , subarray
                              )
+
+import JavaScript.TypedArray.ArrayBuffer ( ArrayBuffer(..))
+
 import qualified Data.JSString as JSString
 
 import Data.ByteString(ByteString(..))
@@ -87,14 +90,22 @@ foreign import javascript unsafe
   "if (typeof(window._rt.sid) == 'number') { $r = window._rt.sid; } else { $r = -1; }"
   js_rt_sid :: IO Int
 
-foreign import javascript unsafe "$1"
+foreign import javascript unsafe "$r = $1;"
   u8a_to_jsval :: Uint8Array -> IO JSVal
 
-foreign import javascript unsafe "$1"
+foreign import javascript unsafe "$r = $1;"
+  jsval_unsafe_cast_to_ab :: JSVal -> IO ArrayBuffer
+
+foreign import javascript unsafe "$r = $1;"
   jsval_unsafe_cast_to_u8a :: JSVal -> IO Uint8Array
 
 foreign import javascript unsafe "$1 instanceof Uint8Array"
   jsval_is_u8a :: JSVal -> IO Bool
+
+foreign import javascript unsafe "$1 instanceof ArrayBuffer"
+  jsval_is_ab :: JSVal -> IO Bool
+
+
 
 {-
 
@@ -114,6 +125,11 @@ consoleLog a = do
   console <- jsg "console"
   console ^. js1 "log" a
   return ()
+
+ab_to_bs :: ArrayBuffer -> JSM ByteString
+ab_to_bs a = do
+  b <- ghcjsPure $ createFromArrayBuffer a
+  ghcjsPure $ toByteString 0 Nothing b
 
 u8a_to_bs :: Uint8Array -> JSM ByteString
 u8a_to_bs v = do
@@ -142,6 +158,18 @@ jsval_to_u8a v = do
   if x then Just <$> liftIO (jsval_unsafe_cast_to_u8a v)
        else return Nothing
 
+jsval_to_bs :: JSVal -> JSM (Maybe ByteString)
+jsval_to_bs v = do
+  x <- liftIO $ jsval_is_u8a v
+  y <- liftIO $ jsval_is_ab v
+  case (x, y)  of
+    (True, False) -> do
+      a <- liftIO $ jsval_unsafe_cast_to_u8a v
+      Just <$> u8a_to_bs a
+    (False, True) -> do
+      a <- liftIO $ jsval_unsafe_cast_to_ab v
+      Just <$> ab_to_bs a
+    _ -> return Nothing
 
 isNodeJS :: JSM Bool
 isNodeJS = do

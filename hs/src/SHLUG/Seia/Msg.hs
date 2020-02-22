@@ -11,6 +11,7 @@ module SHLUG.Seia.Msg
   , msgIsHB, msgIsGeneral, msgIsOGM, msgIsRTC
   , msgIsSigned
   , msgFillEpoch
+  , msgHB
   ) where
 
 import SHLUG.Seia.Type
@@ -73,6 +74,8 @@ data Msg = MsgHB { _msg_type :: !MsgType } | -- type 1
                      } |
            MsgInvalid { _msg_type :: !MsgType } -- type = 0
            deriving (Eq, Show, Typeable, Data)
+
+msgHB = MsgHB _mt_hb
 
 msgType' :: ByteString -> (Char, Int)
 msgType' s = case UTF8.decode s of
