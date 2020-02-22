@@ -12,6 +12,7 @@ import SHLUG.Seia.Rt
 import SHLUG.Seia.Type
 import SHLUG.Seia.Network.MQTT
 import SHLUG.Seia.Msg
+import SHLUG.Seia.Network.ConnMan
 
 import Text.Show.Unicode
 
@@ -43,6 +44,7 @@ import Control.Monad (forever, when, join)
 import Control.Monad.IO.Class (liftIO, MonadIO(..))
 
 import Control.Monad.Fix (MonadFix(..))
+import Control.Monad.Trans.Maybe (MaybeT(..))
 
 import qualified Data.Text as T
 import Data.Text (Text(..))
@@ -60,10 +62,13 @@ import Control.Monad.Catch (MonadCatch, catch) -- JSM is MonadCatch
 app :: ( Reflex t
        , TriggerEvent t m
        , PerformEvent t m
-       , MonadIO (Performable m)
+       , MonadJSM (Performable m)
+       , MonadSample t (Performable m)
+       , MonadHold t (Performable m)
        , MonadHold t m
        , MonadJSM m
        , MonadFix m
+       , PostBuild t m
        ) => m ()
 app = do
   liftIO $ putStrLn "start"
@@ -74,9 +79,18 @@ app = do
 
   liftIO $ putStrLn $ "conf = " ++ show t
 
-  liftIO $ msgTrivalTest (_conf_nid t) (_conf_priv_key t)
 
-  mqttLoopbackTest
+  --mqttLoopbackTest
+  let tx = never
+  connMan <- connManNew MkConnManConf { _conn_man_tx = tx
+                                      , _rt_conf = rt_conf
+                                      , _conf = conf
+                                      }
+
+  performEvent_ $ ffor (updated $ _conn_man_mqtt_state connMan) $ \ev ->
+    liftIO $ putStrLn $ "mqtt state: " ++ show ev
+
+  return ()
 
 main :: IO ()
 main = do
