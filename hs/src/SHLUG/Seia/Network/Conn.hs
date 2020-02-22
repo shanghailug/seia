@@ -20,6 +20,7 @@ import Data.Text (Text(..))
 import Data.Word (Word64)
 
 import Data.Binary
+import Data.Int
 
 import GHC.Generics (Generic)
 
@@ -32,6 +33,8 @@ import Control.Lens ((^.))
 import Control.Monad (when, forM_)
 
 import Control.Monad.Trans.Maybe (runMaybeT, MaybeT(..))
+
+import Control.Concurrent (forkIO, threadDelay)
 
 import Data.IORef
 import qualified Data.Text as T
@@ -169,8 +172,9 @@ peerConnCfg ts = do
 createConnection :: ConnConf ->
                     IORef (Maybe DOM.RTCPeerConnection) ->
                     IORef (Maybe DOM.RTCDataChannel) ->
+                    IORef Int64 ->
                     Maybe JSVal -> JSM ()
-createConnection c pcRef dcRef remoteSdp = do
+createConnection c pcRef dcRef tsRef remoteSdp = do
   pc <- peerConnCfg (_conn_turn_server c) >>=
         new (jsg "RTCPeerConnection") >>=
         (return . DOM.RTCPeerConnection)
@@ -201,7 +205,7 @@ createConnection c pcRef dcRef remoteSdp = do
      liftJSM $ do
        -- NOTE: should setup dc(callback) as soon as possible
        -- should not insert any IO op between
-       setupDataChannel c dcRef dc
+       setupDataChannel c dcRef tsRef dc
        liftIO $ printf "  %s: on data channel\n" (show $ _conn_local c)
        checkDC c dc
 
@@ -227,7 +231,7 @@ createConnection c pcRef dcRef remoteSdp = do
 
   -- insert dc, should insert after last function
   -- which throw PromiseRejected exception
-  mapM_ (setupDataChannel c dcRef) dc'
+  mapM_ (setupDataChannel c dcRef tsRef) dc'
 
   if isJust remoteSdp
   then sendRTCMsg c $ MkRTCSignal RTCAnswer sdp'
@@ -244,8 +248,9 @@ checkDC c dc = do
 onRTCRx :: ConnConf ->
            IORef (Maybe DOM.RTCPeerConnection) ->
            IORef (Maybe DOM.RTCDataChannel) ->
+           IORef Int64 ->
            (Word64, ByteString) -> JSM ()
-onRTCRx c pcRef dcRef (epoch, raw) = do
+onRTCRx c pcRef dcRef tsRef (epoch, raw) = do
   let msg = decode $ fromStrict raw :: RTCMsg
   liftIO $ printf "    on rtc rx: %s\n" (sss 50 msg) >> IO.hFlush IO.stdout
 
@@ -265,14 +270,14 @@ onRTCRx c pcRef dcRef (epoch, raw) = do
       then do _conn_st_cb c $ ConnFail
               liftIO $ putStrLn $ "rtc req fail: " ++ show res
       else do _conn_st_cb c $ ConnSignal
-              createConnection c pcRef dcRef Nothing
+              createConnection c pcRef dcRef tsRef Nothing
     MkRTCSignal tp str ->
       do --- NOTE, wrtc will throw exception for null, "", {}
          jv <- jsg "JSON" ^. js1 "parse" str
          when (str == T.pack "null") $ consoleLog jv
 
          case (tp, pc') of
-           (RTCOffer,  _) -> createConnection c pcRef dcRef (Just jv)
+           (RTCOffer,  _) -> createConnection c pcRef dcRef tsRef (Just jv)
            (RTCAnswer, Just pc) ->
              catch (DOM.setRemoteDescription pc (DOM.RTCSessionDescriptionInit jv))
                    (fmap (const ()) . promiseH0)
@@ -285,12 +290,15 @@ onRTCRx c pcRef dcRef (epoch, raw) = do
   return ()
 
 setupDataChannel :: ConnConf -> IORef (Maybe DOM.RTCDataChannel) ->
+                    IORef Int64 ->
                     DOM.RTCDataChannel -> JSM ()
-setupDataChannel c dcRef dc = do
+setupDataChannel c dcRef tsRef dc = do
   let nid = _conn_local c
 
   DOM.on dc RTCDataChannel.open $ do
     liftJSM $ (_conn_st_cb c) (ConnReady (_conn_type c))
+    t <- liftIO $ getEpochMs -- Int
+    liftIO $ atomicWriteIORef tsRef t
     liftIO $ printf "  %s: data channel open\n" (show nid)
 
   DOM.on dc RTCDataChannel.message $ do
@@ -355,6 +363,9 @@ connNew c = do
   pcRef <- liftIO $ newIORef Nothing
   dcRef <- liftIO $ newIORef Nothing
 
+  -- last recv time stamp
+  tsRef <- liftIO $ newIORef (-1)
+
   liftIO $ printf "conn new: %s -> %s\n"
                   (show $ _conn_local c)
                   (show $ _conn_remote c)
@@ -364,6 +375,11 @@ connNew c = do
   when (_conn_type c == ConnIsClient) $
     liftJSM $ sendRTCMsg c $ MkRTCReq (_conn_main_ver c)
 
+  liftIO $ forkIO $ do
+    threadDelay $ 10 * 1000 * 1000
+    ts <- readIORef tsRef
+    when (ts < 0) (_conn_st_cb c $ ConnTimeout)
+
   return MkConn { _conn_tx_cb = liftJSM . onTx c dcRef
-                , _conn_rtc_rx_cb = liftJSM . onRTCRx c pcRef dcRef
+                , _conn_rtc_rx_cb = liftJSM . onRTCRx c pcRef dcRef tsRef
                 }
