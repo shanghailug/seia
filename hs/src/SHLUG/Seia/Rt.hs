@@ -105,6 +105,12 @@ foreign import javascript unsafe "$1 instanceof Uint8Array"
 foreign import javascript unsafe "$1 instanceof ArrayBuffer"
   jsval_is_ab :: JSVal -> IO Bool
 
+foreign import javascript unsafe "$1 instanceof Blob"
+  jsval_is_blob :: JSVal -> IO Bool
+
+foreign import javascript interruptible
+  "$1.arrayBuffer().then($c);"
+  js_blob_to_ab :: JSVal -> IO ArrayBuffer
 
 
 {-
@@ -169,7 +175,10 @@ jsval_to_bs v = do
     (False, True) -> do
       a <- liftIO $ jsval_unsafe_cast_to_ab v
       Just <$> ab_to_bs a
-    _ -> return Nothing
+    -- NOTE: Blob is not exist for nodejs
+    _ -> do z <- liftIO $ jsval_is_blob v
+            if z then js_blob_to_ab v >>= ab_to_bs >>= (return . Just)
+            else return Nothing
 
 isNodeJS :: JSM Bool
 isNodeJS = do
