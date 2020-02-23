@@ -250,8 +250,18 @@ connManNew c = do
         mqttSt <- sample $ current mqtt_stateD
 
         cmap <- sample conn_cb_B
+        st <- sample $ current stD
 
-        let conn' = rtblNextConn rtbl dst cmap
+        -- we should only use ConnReady neighbor
+        -- should filter those in ConnSignal or other state
+        -- NOTE, here might have race condition(connection state change),
+        -- but just assume this is OK
+        let cmap' = Map.filterWithKey (\k _ -> case Map.lookup k st of
+                                               Just (ConnReady _) -> True
+                                               _ -> False
+                                      ) cmap
+
+        let conn' = rtblNextConn rtbl dst cmap'
 
         if isJust conn'
         then do
