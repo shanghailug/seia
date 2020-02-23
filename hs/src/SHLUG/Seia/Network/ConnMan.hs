@@ -37,6 +37,7 @@ import Control.Monad.Fix (MonadFix(..))
 import Data.Maybe (isJust, fromJust)
 
 import Text.Printf
+import qualified System.IO as IO
 
 import Reflex
 import Language.Javascript.JSaddle ( JSM(..), MonadJSM(..)
@@ -249,28 +250,36 @@ connManNew c = do
                                                          , _msg_payload msg)
                      Nothing -> liftIO $ printf "rtc msg dst not exist, drop\n"
 
-           else do let on_conn_st st = liftIO $ stT (src, st)
-                   conn <- connNew MkConnConf
-                     { _conn_local = nid
-                     , _conn_remote = src
-                     , _conn_main_ver = main_ver
-                     , _conn_type = ConnIsServer
-                     , _conn_st_cb = on_conn_st
-                     , _conn_rx_cb = liftIO . rxPreT
-                     , _conn_turn_server = ts
-                     , _conn_msg_sign = conn_msg_sign
-                     , _conn_nid_exist = Map.member src rtbl -- req node exist?
-                     }
+           else do let raw = _msg_payload msg
+                   let on_conn_st st = liftIO $ stT (src, st)
 
-                   liftIO $ conn_cb_T (src, Just conn)
-                   (_conn_rtc_rx_cb conn) (_msg_epoch msg, _msg_payload msg)
-                   return ()
-
+                   let cc = MkConnConf
+                            { _conn_local = nid
+                            , _conn_remote = src
+                            , _conn_main_ver = main_ver
+                            , _conn_type = ConnIsServer
+                            , _conn_st_cb = on_conn_st
+                            , _conn_rx_cb = liftIO . rxPreT
+                            , _conn_turn_server = ts
+                            , _conn_msg_sign = conn_msg_sign
+                            , _conn_nid_exist = Map.member src rtbl -- req node exist?
+                            }
+                   -- should only create new Conn for MsgRTCReq
+                   when (connIsReq raw) $
+                     do conn <- connNew cc
+                        liftIO $ conn_cb_T (src, Just conn)
+                        (_conn_rtc_rx_cb conn) (_msg_epoch msg, raw)
+                        return ()
 
   -- tx related
   let txE = _conn_man_tx c
   performEvent_ $ ffor txE $ \raw -> when (msgIsGeneral raw) $  liftIO (rxPreT raw)
 
+
+  tick1 <- liftIO getCurrentTime >>= tickLossy 1
+  performEvent_ $ ffor tick1  $ \_ -> do
+    liftIO $ printf "======= tick =======\n"
+    liftIO $ IO.hFlush IO.stdout
 
   -- automake conn check
   tick1s5 <- liftIO getCurrentTime >>= tickLossy 1.5
