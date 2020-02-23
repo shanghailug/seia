@@ -49,6 +49,8 @@ import Control.Monad.Trans.Maybe (MaybeT(..))
 import qualified Data.Text as T
 import Data.Text (Text(..))
 
+import qualified Data.ByteString as BS
+
 import System.IO (hFlush, stdout)
 import qualified Data.Map as M
 import Data.Map (Map(..))
@@ -76,8 +78,8 @@ app = do
   liftIO $ putStrLn $ "rt_conf = " ++ show rt_conf
   conf <- confB never never
   t <- sample conf
-
-  liftIO $ putStrLn $ "conf = " ++ show t
+  let t' = t { _conf_priv_key = BS.empty }
+  liftIO $ putStrLn $ "conf = " ++ show t'
 
 
   --mqttLoopbackTest
