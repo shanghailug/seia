@@ -283,11 +283,17 @@ connManNew c = do
         let ogm' = ogm { _msg_hop = hop + 1}
         let raw = toStrict $ encode ogm'
 
-        cbMap <- sample conn_cb_B
+        cmap <- sample conn_cb_B
+        st <- sample $ current $ stD
+        -- remote not ready neighbor
+        let cmap' = Map.filterWithKey (\k _ -> case Map.lookup k st of
+                                               Just (ConnReady _) -> True
+                                               _ -> False
+                                      ) cmap
 
         liftJSM $ sequence_ $
           Map.mapWithKey (\k v -> when (k /= src) (_conn_tx_cb v $ raw))
-                         cbMap
+                         cmap'
 
   -- GOM gen
   let sendOGM = do
