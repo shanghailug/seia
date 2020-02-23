@@ -216,7 +216,7 @@ createConnection c pcRef dcRef tsRef remoteSdp = do
        -- NOTE: should setup dc(callback) as soon as possible
        -- should not insert any IO op between
        setupDataChannel c pcRef dcRef tsRef dc
-       liftIO $ printf "  %s: on data channel\n" (show $ _conn_local c)
+       liftIO $ printf "  %s: on data channel\n" (show $ _conn_remote c)
        checkDC c dc
 
   dc' <- if isOffer
@@ -350,7 +350,7 @@ setupDataChannel :: ConnConf ->
                     IORef Int64 ->
                     DOM.RTCDataChannel -> JSM ()
 setupDataChannel c pcRef dcRef tsRef dc = do
-  let nid = _conn_local c
+  let nid = _conn_remote c
   t0 <- liftIO getCurrentTime
 
   DOM.on dc RTCDataChannel.open $ do
@@ -405,7 +405,7 @@ onTx c dcRef payload = do
 
   when (res == Nothing) $
     liftIO $ printf "%s: tx msg drop, dc is not exist or not open\n"
-               (show $ _conn_local c)
+               (show $ _conn_remote c)
 
   return ()
 
