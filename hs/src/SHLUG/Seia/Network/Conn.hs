@@ -7,6 +7,7 @@ module SHLUG.Seia.Network.Conn ( connNew
                                , Conn(..)
                                , ConnConf(..)
                                , ConnType(..)
+                               , connIsReq
                                ) where
 
 import SHLUG.Seia.Type
@@ -18,6 +19,7 @@ import SHLUG.Seia.Helper
 import Data.ByteString ( ByteString(..) )
 import Data.Text (Text(..))
 import Data.Word (Word64)
+import Data.Time (getCurrentTime)
 
 import Data.Binary
 import Data.Int
@@ -48,6 +50,7 @@ import Reflex
 import Language.Javascript.JSaddle ( JSM(..), MonadJSM(..)
                                    , liftJSM
                                    , askJSM, runJSM
+                                   , JSContextRef
                                    , JSException(..)
                                    , JSVal(..), toJSVal
                                    , toJSString
@@ -65,6 +68,9 @@ import qualified GHCJS.DOM.RTCIceCandidateEvent as DOME
 import qualified GHCJS.DOM.RTCDataChannelEvent as DOME
 import qualified GHCJS.DOM.RTCIceCandidate as DOM
 import qualified GHCJS.DOM.RTCDataChannel as RTCDataChannel
+
+-- for close
+import qualified GHCJS.DOM.RTCPeerConnection as RTCPeerConnection
 
 import qualified GHCJS.DOM.EventM as DOM
 import qualified GHCJS.DOM.MessageEvent as DOM
@@ -150,15 +156,18 @@ promiseH0 e = do
   DOM.liftJSM $ consoleLog ("promise rejected", DOM.rejectionReason e)
   return Nothing
 
+-- this can not catch JSException, why ?
 jsexceptionH0 :: (MonadCatch m, DOM.MonadJSM m) => JSException -> m (Maybe a)
 jsexceptionH0 e = do
   DOM.liftJSM $ consoleLog ("js exception", show e)
   return Nothing
 
-exceptionH0 :: (MonadCatch m, DOM.MonadJSM m) => SomeException -> m (Maybe e)
-exceptionH0 e = do
-  DOM.liftJSM $ consoleLog ("js exception", show e)
+exceptionH0' :: (MonadCatch m, DOM.MonadJSM m) => Bool -> SomeException -> m (Maybe e)
+exceptionH0' verbose e = do
+  when (verbose) $ DOM.liftJSM $ consoleLog ("js exception", show e)
   return Nothing
+
+exceptionH0 = exceptionH0' False
 
 peerConnCfg :: [Text] -> JSM JSVal
 peerConnCfg ts = do
@@ -206,7 +215,7 @@ createConnection c pcRef dcRef tsRef remoteSdp = do
      liftJSM $ do
        -- NOTE: should setup dc(callback) as soon as possible
        -- should not insert any IO op between
-       setupDataChannel c dcRef tsRef dc
+       setupDataChannel c pcRef dcRef tsRef dc
        liftIO $ printf "  %s: on data channel\n" (show $ _conn_local c)
        checkDC c dc
 
@@ -232,7 +241,7 @@ createConnection c pcRef dcRef tsRef remoteSdp = do
 
   -- insert dc, should insert after last function
   -- which throw PromiseRejected exception
-  mapM_ (setupDataChannel c dcRef tsRef) dc'
+  mapM_ (setupDataChannel c pcRef dcRef tsRef) dc'
 
   if isJust remoteSdp
   then sendRTCMsg c $ MkRTCSignal RTCAnswer sdp'
@@ -242,7 +251,7 @@ checkDC :: ConnConf -> DOM.RTCDataChannel -> JSM ()
 checkDC c dc = do
   st <- RTCDataChannel.getReadyState dc
   when (st == Enums.RTCDataChannelStateOpen) $
-       _conn_st_cb c $ ConnReady (_conn_type c)
+    updateSt c undefined $ ConnReady (_conn_type c)
   liftIO $ printf " dc st -> %s\n" (show st)
   return ()
 
@@ -259,18 +268,18 @@ onRTCRx c pcRef dcRef tsRef (epoch, raw) = do
   case msg of
     MkRTCReq ver ->
       if _conn_nid_exist c
-      then do _conn_st_cb c $ ConnFail
+      then do updateSt c pcRef ConnFail
               sendRTCMsg c (MkRTCRes RTCMsgResExist)
       else if ver /= _conn_main_ver c
-           then do _conn_st_cb c $ ConnFail
+           then do updateSt c pcRef ConnFail
                    sendRTCMsg c (MkRTCRes RTCMsgResIncompatiable)
-           else do  _conn_st_cb c $ ConnSignal
-                    sendRTCMsg c (MkRTCRes RTCMsgResOK)
+           else do updateSt c pcRef ConnSignal
+                   sendRTCMsg c (MkRTCRes RTCMsgResOK)
     MkRTCRes res ->
       if res /= RTCMsgResOK
-      then do _conn_st_cb c $ ConnFail
+      then do updateSt c pcRef ConnFail
               liftIO $ putStrLn $ "rtc req fail: " ++ show res
-      else do _conn_st_cb c $ ConnSignal
+      else do updateSt c pcRef ConnSignal
               createConnection c pcRef dcRef tsRef Nothing
     MkRTCSignal tp str ->
       do --- NOTE, wrtc will throw exception for null, "", {}
@@ -286,9 +295,17 @@ onRTCRx c pcRef dcRef tsRef (epoch, raw) = do
              catch (DOM.addIceCandidate pc (DOM.RTCIceCandidate jv))
                    (fmap (const ()) . promiseH0)
            _ -> do liftIO $ putStrLn $ "pc is not exist for " ++ show tp
-                   _conn_st_cb c $ ConnFail
+                   updateSt c pcRef ConnFail
 
   return ()
+
+connIsReq :: ByteString -> Bool
+connIsReq raw =
+  let msg = decode $ fromStrict raw :: RTCMsg in
+  case msg of
+    MkRTCReq _ -> True
+    _ -> False
+
 
 procMsg :: ConnConf -> IORef Int64 -> ByteString -> JSM ()
 procMsg c tsRef payload = do
@@ -297,18 +314,25 @@ procMsg c tsRef payload = do
   -- todo, verify
   runMaybeT $ do
     unless (msgVerify payload) $ fail "verify fail"
-    when (msgIsHB payload) $ fail "heart beat"
+    when (msgIsHB payload) $ do
+      t <- liftIO getCurrentTime
+      liftIO $ printf "----> hb: %s\n" (show t)
+      fail "heart beat"
 
     liftJSM $ _conn_rx_cb c $ payload
 
   return ()
 
-heartbeatChecker :: JSVal -> ConnConf -> IORef Int64 -> DOM.RTCDataChannel -> JSM ()
-heartbeatChecker pkt c tsRef dc = do
+heartbeatChecker :: JSVal -> ConnConf -> IORef (Maybe DOM.RTCPeerConnection) ->
+                    IORef Int64 -> DOM.RTCDataChannel -> JSM ()
+heartbeatChecker pkt c pcRef tsRef dc = do
   -- delay 250ms
   liftIO $ threadDelay $ 250 * 1000 -- 250ms
-  -- send heart beat
-  RTCDataChannel.sendView dc (DOM.ArrayBufferView pkt)
+  -- send heart beat,
+  -- NOTE, current data channel might not in 'open' state,
+  -- because remote might recv timeout and close channel
+  catch (RTCDataChannel.sendView dc (DOM.ArrayBufferView pkt))
+        (fmap (const ()) . exceptionH0)
   -- delay 250
   liftIO $ threadDelay $ 250 * 1000
   -- check
@@ -316,13 +340,15 @@ heartbeatChecker pkt c tsRef dc = do
   ts <- liftIO $ readIORef tsRef
 
   if now - ts > 1000
-  then (_conn_st_cb c) ConnTimeout
-  else heartbeatChecker pkt c tsRef dc
+  then updateSt c pcRef ConnTimeout
+  else heartbeatChecker pkt c pcRef tsRef dc
 
-setupDataChannel :: ConnConf -> IORef (Maybe DOM.RTCDataChannel) ->
+setupDataChannel :: ConnConf ->
+                    IORef (Maybe DOM.RTCPeerConnection) ->
+                    IORef (Maybe DOM.RTCDataChannel) ->
                     IORef Int64 ->
                     DOM.RTCDataChannel -> JSM ()
-setupDataChannel c dcRef tsRef dc = do
+setupDataChannel c pcRef dcRef tsRef dc = do
   let nid = _conn_local c
 
   DOM.on dc RTCDataChannel.open $ do
@@ -335,7 +361,7 @@ setupDataChannel c dcRef tsRef dc = do
     let bs = toStrict $ encode $ msgHB
     pkt <- liftJSM $ bs_to_u8a bs >>= u8a_to_jsval
 
-    liftIO $ forkIO $ runJSM (heartbeatChecker pkt c tsRef dc) ctx
+    liftIO $ forkIO $ runJSM (heartbeatChecker pkt c pcRef tsRef dc) ctx
     return ()
 
   DOM.on dc RTCDataChannel.message $ do
@@ -369,12 +395,11 @@ onTx c dcRef payload = do
   res <- runMaybeT $ do
     when (isNothing dc') $ fail "dc is not exist"
     let dc = fromJust dc'
-    st <- DOM.liftJSM $ RTCDataChannel.getReadyState dc
-    when (st /= Enums.RTCDataChannelStateOpen) $
-      fail "dc is not open"
 
+    -- not check dc state, just catch any exception
     v <- liftJSM $ u8a_to_jsval u8a
-    liftJSM $ RTCDataChannel.sendView dc (DOM.ArrayBufferView v)
+    liftJSM $ catch (RTCDataChannel.sendView dc (DOM.ArrayBufferView v))
+                    (fmap (const ()) . exceptionH0)
 
   when (res == Nothing) $
     liftIO $ printf "%s: tx msg drop, dc is not exist or not open\n"
@@ -395,6 +420,14 @@ sendRTCMsg c rmsg = do
   let dat = (_conn_msg_sign c) (toStrict $ encode msg1)
   (_conn_rx_cb c) dat
 
+updateSt :: ConnConf -> IORef (Maybe DOM.RTCPeerConnection) -> ConnState -> JSM ()
+updateSt c pcRef st = do
+  when ((st == ConnTimeout) || (st == ConnFail)) $ do
+    pc' <- liftIO $ atomicModifyIORef pcRef (\x -> (Nothing, x))
+    mapM_ RTCPeerConnection.close pc'
+  _conn_st_cb c $ st
+
+
 connNew :: (MonadJSM m) => ConnConf -> m (Conn m)
 connNew c = do
   pcRef <- liftIO $ newIORef Nothing
@@ -407,15 +440,17 @@ connNew c = do
                   (show $ _conn_local c)
                   (show $ _conn_remote c)
 
-  liftJSM $ (_conn_st_cb c) ConnIdle
+  liftJSM $ updateSt c pcRef ConnIdle
+
   -- init rtc request to remote node
   when (_conn_type c == ConnIsClient) $
     liftJSM $ sendRTCMsg c $ MkRTCReq (_conn_main_ver c)
 
+  ctx <- liftJSM askJSM
   liftIO $ forkIO $ do
     threadDelay $ 10 * 1000 * 1000
     ts <- readIORef tsRef
-    when (ts < 0) (_conn_st_cb c $ ConnTimeout)
+    when (ts < 0) $ runJSM (updateSt c pcRef ConnTimeout) ctx
 
   return MkConn { _conn_tx_cb = liftJSM . onTx c dcRef
                 , _conn_rtc_rx_cb = liftJSM . onRTCRx c pcRef dcRef tsRef
