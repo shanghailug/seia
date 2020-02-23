@@ -1,5 +1,6 @@
 {-# language FlexibleContexts #-}
 {-# language BlockArguments #-}
+{-# language TupleSections #-}
 
 module SHLUG.Seia.Network.ConnMan ( connManNew
                                   , ConnMan(..)
@@ -31,6 +32,7 @@ import Control.Monad (when, forever)
 import Control.Concurrent (threadDelay, forkIO)
 
 import Control.Monad.Trans.Maybe (runMaybeT, MaybeT(..))
+import Control.Monad.State (runState, put, get, modify)
 
 import Control.Monad.Fix (MonadFix(..))
 
@@ -44,8 +46,11 @@ import Language.Javascript.JSaddle ( JSM(..), MonadJSM(..)
                                    , liftJSM
                                    )
 
---date RouteEntry = MkRouteEntry { _neighbor :: [NID] }
-type RouteEntry = NID
+data RouteEntry = MkRouteEntry { _re_ts :: Word64
+                               , _re_nid :: [NID]
+                               , _re_ts' :: Word64
+                               , _re_nid' :: [NID]
+                               } deriving (Eq, Show)
 
 {-
 ConnMan
@@ -107,6 +112,34 @@ data ConnManConf t =
                 , _conf :: Behavior t Conf
                 }
 
+
+  -- map (ogm_neig, src, epoch)
+rtblUp :: Map NID RouteEntry -> (NID, NID, Word64) -> Map NID RouteEntry
+rtblUp m (rid, src, epoch) = snd $ (flip runState) m $
+  case Map.lookup src m of
+  Nothing -> modify $
+             Map.insert src
+                        MkRouteEntry
+                        { _re_ts = epoch
+                        , _re_nid = [rid]
+                        , _re_ts' = 0
+                        , _re_nid' = []
+                        }
+  Just re -> if epoch > _re_ts re
+             then modify $
+                  Map.insert src $
+                  re { _re_ts  = epoch     , _re_nid  = [rid]
+                     , _re_ts' = _re_ts re , _re_nid' = _re_nid re
+                     }
+             else if epoch == _re_ts re
+                  then modify $
+                       Map.insert src $
+                       re { _re_nid = let l = _re_nid re in
+                                      if elem rid l then l else l ++ [rid]
+                          }
+                  else return ()
+
+
 connManNew :: ( Reflex t
               , TriggerEvent t m
               , MonadSample t m
@@ -149,9 +182,9 @@ connManNew c = do
                                    else Map.insert nid st m
                   ) Map.empty stE
 
-  -- current route table
+  ------ current route table
   (rtblE, rtblT) <- newTriggerEvent
-  rtblB <- accumB (\m (nid, entry) -> Map.insert nid entry m) Map.empty rtblE
+  rtblB <- accumB rtblUp Map.empty rtblE
 
   -- set turn server & set bootstrap node
   (set_ts_E, set_ts_T) <- newTriggerEvent
@@ -159,7 +192,6 @@ connManNew c = do
 
   (conn_cb_E, conn_cb_T) <- newTriggerEvent
 
-  -- TODO, clear unused callback
   conn_cb_B <- accumB (\m (nid, conn') -> case conn' of
                                           Just conn -> Map.insert nid conn m
                                           Nothing -> Map.delete nid m
@@ -186,7 +218,7 @@ connManNew c = do
              liftIO (printf "MQTT: msg verify fail, drop\n") >>
              fail "verify fail"
 
-           liftIO $ rxPreT raw
+           liftIO $ rxPreT (nid0, raw)
     return ()
 
   ----------- monitor
@@ -220,7 +252,34 @@ connManNew c = do
 
         return ()
 
-  performEvent_ $ ffor rxPreE $ \m -> do
+  -- m -> JSM
+  let routeOGM src ogm = do
+        let hop = _msg_hop ogm
+        let ogm' = ogm { _msg_hop = hop + 1}
+        let raw = toStrict $ encode ogm'
+
+        cbMap <- sample conn_cb_B
+
+        liftJSM $ sequence_ $
+          Map.mapWithKey (\k v -> when (k /= src) (_conn_tx_cb v $ raw))
+                         cbMap
+
+  -- GOM gen
+  tick20 <- liftIO getCurrentTime >>= tickLossy 20
+  performEvent_ $ ffor tick20 $ \_ -> do
+    let ogm = MsgOGM { _msg_type = '\2'
+                     , _msg_src = nid
+                     , _msg_epoch = 0
+                     , _msg_sign = emptySign
+                     , _msg_hop = 0
+                     }
+    ogm1 <- liftIO $ msgFillEpoch ogm
+    let raw = toStrict $ encode ogm1
+    let rawS = conn_msg_sign raw
+
+    liftIO $ rxPreT (nid, rawS)
+
+  performEvent_ $ ffor rxPreE $ \(rid, m) -> do
     let msg = decode (fromStrict m) :: Msg
     liftIO $ printf "    process rxPre: %s\n" (sss 50 msg)
     stMap <- sample $ current stD
@@ -228,7 +287,22 @@ connManNew c = do
     rtbl <- sample rtblB
 
     when (msgIsOGM m) $ do
-      liftIO $ putStrLn "TODO, process OGM, update route table"
+      let ogm = decode $ fromStrict m
+      let hop = _msg_hop ogm
+      let src = _msg_src ogm
+
+      liftIO $ printf "  OGM from %s ..., src %s ...\n"
+                      (take 7 $ show rid)
+                      (take 7 $ show (_msg_src ogm))
+
+      -- update route event
+      liftIO $ rtblT (rid, _msg_src ogm, _msg_epoch ogm)
+      let newRecord = case Map.lookup src rtbl of
+                      Nothing -> True
+                      Just re -> _msg_epoch ogm > _re_ts re
+
+      when ((hop < 4) && newRecord) $ routeOGM rid ogm
+
       return ()
 
     when (msgIsGeneral m) $ do
@@ -246,8 +320,9 @@ connManNew c = do
                 (st /= Just ConnFail) )
            then do m <- sample conn_cb_B
                    case Map.lookup src m of
-                     Just conn -> (_conn_rtc_rx_cb conn) ( _msg_epoch msg
-                                                         , _msg_payload msg)
+                     Just conn -> liftJSM $ (_conn_rtc_rx_cb conn)
+                                            ( _msg_epoch msg
+                                            , _msg_payload msg)
                      Nothing -> liftIO $ printf "rtc msg dst not exist, drop\n"
 
            else do let raw = _msg_payload msg
@@ -259,7 +334,7 @@ connManNew c = do
                             , _conn_main_ver = main_ver
                             , _conn_type = ConnIsServer
                             , _conn_st_cb = on_conn_st
-                            , _conn_rx_cb = liftIO . rxPreT
+                            , _conn_rx_cb = liftIO . rxPreT . (src,)
                             , _conn_turn_server = ts
                             , _conn_msg_sign = conn_msg_sign
                             , _conn_nid_exist = Map.member src rtbl -- req node exist?
@@ -268,14 +343,17 @@ connManNew c = do
                    when (connIsReq raw) $
                      do conn <- connNew cc
                         liftIO $ conn_cb_T (src, Just conn)
-                        (_conn_rtc_rx_cb conn) (_msg_epoch msg, raw)
+                        liftJSM $ (_conn_rtc_rx_cb conn)
+                                  (_msg_epoch msg, raw)
                         return ()
 
   -- tx related
   let txE = _conn_man_tx c
-  performEvent_ $ ffor txE $ \raw -> when (msgIsGeneral raw) $  liftIO (rxPreT raw)
+  performEvent_ $ ffor txE $ \raw -> when (msgIsGeneral raw) $
+                                       liftIO (rxPreT (nid, raw))
 
 
+  ----------------- tick
   tick1 <- liftIO getCurrentTime >>= tickLossy 1
   performEvent_ $ ffor tick1  $ \_ -> do
     liftIO $ printf "======= tick =======\n"
@@ -320,7 +398,7 @@ connManNew c = do
                                  , _conn_main_ver = main_ver
                                  , _conn_type = ConnIsClient
                                  , _conn_st_cb = on_conn_st
-                                 , _conn_rx_cb = liftIO . rxPreT
+                                 , _conn_rx_cb = liftIO . rxPreT . (dst,)
                                  , _conn_turn_server = ts
                                  , _conn_msg_sign = conn_msg_sign
                                  , _conn_nid_exist = False -- always F for client

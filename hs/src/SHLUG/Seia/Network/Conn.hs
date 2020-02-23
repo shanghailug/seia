@@ -143,13 +143,13 @@ data ConnConf = MkConnConf { _conn_local :: NID
                            , _conn_nid_exist :: Bool -- for MkRTCRes
                            }
 
-data Conn m = MkConn { _conn_tx_cb :: ByteString -> m ()
-                     -- signed message, send to _conn_nid
+data Conn = MkConn { _conn_tx_cb :: ByteString -> JSM ()
+                   -- signed message, send to _conn_nid
 
-                     -- verifyed rtc message to this node
-                     -- and src is _conn_dst
-                     , _conn_rtc_rx_cb :: (Word64, ByteString) -> m ()
-                     }
+                   -- verifyed rtc message to this node
+                   -- and src is _conn_dst
+                   , _conn_rtc_rx_cb :: (Word64, ByteString) -> JSM ()
+                   }
 
 promiseH0 :: (MonadCatch m, DOM.MonadJSM m) => DOM.PromiseRejected -> m (Maybe a)
 promiseH0 e = do
@@ -430,7 +430,7 @@ updateSt c pcRef st = do
   _conn_st_cb c $ st
 
 
-connNew :: (MonadJSM m) => ConnConf -> m (Conn m)
+connNew :: (MonadJSM m) => ConnConf -> m Conn
 connNew c = do
   pcRef <- liftIO $ newIORef Nothing
   dcRef <- liftIO $ newIORef Nothing
@@ -448,12 +448,13 @@ connNew c = do
   when (_conn_type c == ConnIsClient) $
     liftJSM $ sendRTCMsg c $ MkRTCReq (_conn_main_ver c)
 
+  -- TODO, should recv RTCRes in 5sec
   ctx <- liftJSM askJSM
   liftIO $ forkIO $ do
     threadDelay $ 10 * 1000 * 1000
     ts <- readIORef tsRef
     when (ts < 0) $ runJSM (updateSt c pcRef ConnTimeout) ctx
 
-  return MkConn { _conn_tx_cb = liftJSM . onTx c dcRef
-                , _conn_rtc_rx_cb = liftJSM . onRTCRx c pcRef dcRef tsRef
+  return MkConn { _conn_tx_cb = onTx c dcRef
+                , _conn_rtc_rx_cb = onRTCRx c pcRef dcRef tsRef
                 }
