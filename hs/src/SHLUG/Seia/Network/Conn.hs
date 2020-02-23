@@ -87,6 +87,11 @@ data ConnState = ConnIdle |
                  ConnFail
                deriving (Eq, Show)
 
+stEnd :: ConnState -> Bool
+stEnd ConnTimeout = True
+stEnd ConnFail = True
+stEnd _ = False
+
 -- TODO: serialize of RTCMsg might incompatible during version change
 data RTCMsgResType = RTCMsgResExist |
                      RTCMsgResIncompatiable |
@@ -180,11 +185,12 @@ peerConnCfg ts = do
     toJSVal res
 
 createConnection :: ConnConf ->
+                    IORef ConnState ->
                     IORef (Maybe DOM.RTCPeerConnection) ->
                     IORef (Maybe DOM.RTCDataChannel) ->
                     IORef Int64 ->
                     Maybe JSVal -> JSM ()
-createConnection c pcRef dcRef tsRef remoteSdp = do
+createConnection c stRef pcRef dcRef tsRef remoteSdp = do
   pc <- peerConnCfg (_conn_turn_server c) >>=
         new (jsg "RTCPeerConnection") >>=
         (return . DOM.RTCPeerConnection)
@@ -215,9 +221,9 @@ createConnection c pcRef dcRef tsRef remoteSdp = do
      liftJSM $ do
        -- NOTE: should setup dc(callback) as soon as possible
        -- should not insert any IO op between
-       setupDataChannel c pcRef dcRef tsRef dc
+       setupDataChannel c stRef pcRef dcRef tsRef dc
        liftIO $ printf "  %s: on data channel\n" (show $ _conn_remote c)
-       checkDC c dc
+       checkDC c stRef dc
 
   dc' <- if isOffer
          then Just <$> DOM.createDataChannel pc "ch0" Nothing
@@ -241,26 +247,27 @@ createConnection c pcRef dcRef tsRef remoteSdp = do
 
   -- insert dc, should insert after last function
   -- which throw PromiseRejected exception
-  mapM_ (setupDataChannel c pcRef dcRef tsRef) dc'
+  mapM_ (setupDataChannel c stRef pcRef dcRef tsRef) dc'
 
   if isJust remoteSdp
   then sendRTCMsg c $ MkRTCSignal RTCAnswer sdp'
   else sendRTCMsg c $ MkRTCSignal RTCOffer sdp'
 
-checkDC :: ConnConf -> DOM.RTCDataChannel -> JSM ()
-checkDC c dc = do
+checkDC :: ConnConf -> IORef ConnState -> DOM.RTCDataChannel -> JSM ()
+checkDC c stRef dc = do
   st <- RTCDataChannel.getReadyState dc
   when (st == Enums.RTCDataChannelStateOpen) $
-    updateSt c undefined $ ConnReady (_conn_type c)
+    updateSt c stRef undefined $ ConnReady (_conn_type c)
   liftIO $ printf " dc st -> %s\n" (show st)
   return ()
 
 onRTCRx :: ConnConf ->
+           IORef ConnState ->
            IORef (Maybe DOM.RTCPeerConnection) ->
            IORef (Maybe DOM.RTCDataChannel) ->
            IORef Int64 ->
            (Word64, ByteString) -> JSM ()
-onRTCRx c pcRef dcRef tsRef (epoch, raw) = do
+onRTCRx c stRef pcRef dcRef tsRef (epoch, raw) = do
   let msg = decode $ fromStrict raw :: RTCMsg
   liftIO $ printf "    on rtc rx: %s\n" (sss 50 msg) >> IO.hFlush IO.stdout
 
@@ -268,26 +275,26 @@ onRTCRx c pcRef dcRef tsRef (epoch, raw) = do
   case msg of
     MkRTCReq ver ->
       if _conn_nid_exist c
-      then do updateSt c pcRef ConnFail
+      then do updateSt c stRef pcRef ConnFail
               sendRTCMsg c (MkRTCRes RTCMsgResExist)
       else if ver /= _conn_main_ver c
-           then do updateSt c pcRef ConnFail
+           then do updateSt c stRef pcRef ConnFail
                    sendRTCMsg c (MkRTCRes RTCMsgResIncompatiable)
-           else do updateSt c pcRef ConnSignal
+           else do updateSt c stRef pcRef ConnSignal
                    sendRTCMsg c (MkRTCRes RTCMsgResOK)
     MkRTCRes res ->
       if res /= RTCMsgResOK
-      then do updateSt c pcRef ConnFail
+      then do updateSt c stRef pcRef ConnFail
               liftIO $ putStrLn $ "rtc req fail: " ++ show res
-      else do updateSt c pcRef ConnSignal
-              createConnection c pcRef dcRef tsRef Nothing
+      else do updateSt c stRef pcRef ConnSignal
+              createConnection c stRef pcRef dcRef tsRef Nothing
     MkRTCSignal tp str ->
       do --- NOTE, wrtc will throw exception for null, "", {}
          jv <- jsg "JSON" ^. js1 "parse" str
          when (str == T.pack "null") $ consoleLog jv
 
          case (tp, pc') of
-           (RTCOffer,  _) -> createConnection c pcRef dcRef tsRef (Just jv)
+           (RTCOffer,  _) -> createConnection c stRef pcRef dcRef tsRef (Just jv)
            (RTCAnswer, Just pc) ->
              catch (DOM.setRemoteDescription pc (DOM.RTCSessionDescriptionInit jv))
                    (fmap (const ()) . promiseH0)
@@ -295,7 +302,7 @@ onRTCRx c pcRef dcRef tsRef (epoch, raw) = do
              catch (DOM.addIceCandidate pc (DOM.RTCIceCandidate jv))
                    (fmap (const ()) . promiseH0)
            _ -> do liftIO $ putStrLn $ "pc is not exist for " ++ show tp
-                   updateSt c pcRef ConnFail
+                   updateSt c stRef pcRef ConnFail
 
   return ()
 
@@ -316,6 +323,9 @@ procMsg c t0 tsRef payload = do
     unless (msgVerify payload) $ fail "verify fail"
     when (msgIsHB payload) $ do
       t <- liftIO getCurrentTime
+      let dt = diffUTCTime t t0
+      when (floor (dt*2) `mod` 120 == 0) $
+        liftIO $ printf "----> uptime %s : %s\n" (sss 8 (_conn_remote c)) (show dt)
       --liftIO $ printf "----> hb: %s, up %s\n"
       --                (show t)
       --                (show $ diffUTCTime t t0)
@@ -326,9 +336,11 @@ procMsg c t0 tsRef payload = do
   return ()
 
 -- TODO, check first message with 2 x N tolerantion, then 1 x N
-heartbeatChecker :: JSVal -> ConnConf -> IORef (Maybe DOM.RTCPeerConnection) ->
+heartbeatChecker :: JSVal -> ConnConf ->
+                    IORef ConnState ->
+                    IORef (Maybe DOM.RTCPeerConnection) ->
                     IORef Int64 -> DOM.RTCDataChannel -> JSM ()
-heartbeatChecker pkt c pcRef tsRef dc = do
+heartbeatChecker pkt c stRef pcRef tsRef dc = do
   -- send heart beat,
   -- NOTE, current data channel might not in 'open' state,
   -- because remote might recv timeout and close channel
@@ -341,20 +353,21 @@ heartbeatChecker pkt c pcRef tsRef dc = do
   ts <- liftIO $ readIORef tsRef
 
   if now - ts > 1000
-  then updateSt c pcRef ConnTimeout
-  else heartbeatChecker pkt c pcRef tsRef dc
+  then updateSt c stRef pcRef ConnTimeout
+  else heartbeatChecker pkt c stRef pcRef tsRef dc
 
 setupDataChannel :: ConnConf ->
+                    IORef ConnState ->
                     IORef (Maybe DOM.RTCPeerConnection) ->
                     IORef (Maybe DOM.RTCDataChannel) ->
                     IORef Int64 ->
                     DOM.RTCDataChannel -> JSM ()
-setupDataChannel c pcRef dcRef tsRef dc = do
+setupDataChannel c stRef pcRef dcRef tsRef dc = do
   let nid = _conn_remote c
   t0 <- liftIO getCurrentTime
 
   DOM.on dc RTCDataChannel.open $ do
-    liftJSM $ (_conn_st_cb c) (ConnReady (_conn_type c))
+    liftJSM $ updateSt c stRef pcRef (ConnReady (_conn_type c))
     t <- liftIO $ getEpochMs -- Int
     liftIO $ atomicWriteIORef tsRef t
     liftIO $ printf "  %s: data channel open\n" (show nid)
@@ -363,7 +376,7 @@ setupDataChannel c pcRef dcRef tsRef dc = do
     let bs = toStrict $ encode $ msgHB
     pkt <- liftJSM $ bs_to_u8a bs >>= u8a_to_jsval
 
-    liftIO $ forkIO $ runJSM (heartbeatChecker pkt c pcRef tsRef dc) ctx
+    liftIO $ forkIO $ runJSM (heartbeatChecker pkt c stRef pcRef tsRef dc) ctx
     return ()
 
   DOM.on dc RTCDataChannel.message $ do
@@ -381,7 +394,7 @@ setupDataChannel c pcRef dcRef tsRef dc = do
     liftIO $ printf "%s: data channel err\n" (show nid)
 
   DOM.on dc RTCDataChannel.closeEvent $ do
-    liftJSM $ _conn_st_cb c $ ConnFail
+    liftJSM $ updateSt c stRef pcRef ConnFail
     liftIO $ printf "%s: data channel closed\n" (show nid)
 
   liftIO $ atomicWriteIORef dcRef (Just dc)
@@ -422,13 +435,17 @@ sendRTCMsg c rmsg = do
   let dat = (_conn_msg_sign c) (toStrict $ encode msg1)
   (_conn_rx_cb c) dat
 
-updateSt :: ConnConf -> IORef (Maybe DOM.RTCPeerConnection) -> ConnState -> JSM ()
-updateSt c pcRef st = do
-  when ((st == ConnTimeout) || (st == ConnFail)) $ do
-    pc' <- liftIO $ atomicModifyIORef pcRef (\x -> (Nothing, x))
-    mapM_ RTCPeerConnection.close pc'
-  _conn_st_cb c $ st
-
+updateSt :: ConnConf -> IORef ConnState ->
+            IORef (Maybe DOM.RTCPeerConnection) -> ConnState -> JSM ()
+updateSt c stRef pcRef st = do
+  -- avoid race condition
+  old <- liftIO $ atomicModifyIORef' stRef
+                                     (\x -> if stEnd x then (x, x) else (st, x))
+  unless (stEnd old) $ do
+         when (stEnd st) $ do
+              pc' <- liftIO $ atomicModifyIORef' pcRef (\x -> (Nothing, x))
+              mapM_ RTCPeerConnection.close pc'
+         _conn_st_cb c $ st
 
 connNew :: (MonadJSM m) => ConnConf -> m Conn
 connNew c = do
@@ -437,24 +454,27 @@ connNew c = do
 
   -- last recv time stamp
   tsRef <- liftIO $ newIORef (-1)
+  stRef <- liftIO $ newIORef ConnIdle
 
   liftIO $ printf "conn new: %s -> %s\n"
                   (show $ _conn_local c)
                   (show $ _conn_remote c)
 
-  liftJSM $ updateSt c pcRef ConnIdle
+  liftJSM $ updateSt c stRef pcRef ConnIdle
 
   -- init rtc request to remote node
   when (_conn_type c == ConnIsClient) $
     liftJSM $ sendRTCMsg c $ MkRTCReq (_conn_main_ver c)
 
   -- TODO, should recv RTCRes in 5sec
+  -- NOTE: only 1 timeout/fail should output
+  -- or there will be race condition.
   ctx <- liftJSM askJSM
   liftIO $ forkIO $ do
     threadDelay $ 10 * 1000 * 1000
     ts <- readIORef tsRef
-    when (ts < 0) $ runJSM (updateSt c pcRef ConnTimeout) ctx
+    when (ts < 0) $ runJSM (updateSt c stRef pcRef ConnTimeout) ctx
 
   return MkConn { _conn_tx_cb = onTx c dcRef
-                , _conn_rtc_rx_cb = onRTCRx c pcRef dcRef tsRef
+                , _conn_rtc_rx_cb = onRTCRx c stRef pcRef dcRef tsRef
                 }
