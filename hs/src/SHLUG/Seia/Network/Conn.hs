@@ -19,7 +19,7 @@ import SHLUG.Seia.Helper
 import Data.ByteString ( ByteString(..) )
 import Data.Text (Text(..))
 import Data.Word (Word64)
-import Data.Time (getCurrentTime)
+import Data.Time
 
 import Data.Binary
 import Data.Int
@@ -307,8 +307,8 @@ connIsReq raw =
     _ -> False
 
 
-procMsg :: ConnConf -> IORef Int64 -> ByteString -> JSM ()
-procMsg c tsRef payload = do
+procMsg :: ConnConf -> UTCTime -> IORef Int64 -> ByteString -> JSM ()
+procMsg c t0 tsRef payload = do
   -- update timestamp
   liftIO $ getEpochMs >>= atomicWriteIORef tsRef
   -- todo, verify
@@ -316,25 +316,26 @@ procMsg c tsRef payload = do
     unless (msgVerify payload) $ fail "verify fail"
     when (msgIsHB payload) $ do
       t <- liftIO getCurrentTime
-      liftIO $ printf "----> hb: %s\n" (show t)
+      liftIO $ printf "----> hb: %s, up %s\n"
+                      (show t)
+                      (show $ diffUTCTime t t0)
       fail "heart beat"
 
     liftJSM $ _conn_rx_cb c $ payload
 
   return ()
 
+-- TODO, check first message with 2 x N tolerantion, then 1 x N
 heartbeatChecker :: JSVal -> ConnConf -> IORef (Maybe DOM.RTCPeerConnection) ->
                     IORef Int64 -> DOM.RTCDataChannel -> JSM ()
 heartbeatChecker pkt c pcRef tsRef dc = do
-  -- delay 250ms
-  liftIO $ threadDelay $ 250 * 1000 -- 250ms
   -- send heart beat,
   -- NOTE, current data channel might not in 'open' state,
   -- because remote might recv timeout and close channel
   catch (RTCDataChannel.sendView dc (DOM.ArrayBufferView pkt))
         (fmap (const ()) . exceptionH0)
-  -- delay 250
-  liftIO $ threadDelay $ 250 * 1000
+  -- delay 500
+  liftIO $ threadDelay $ 500 * 1000
   -- check
   now <- liftIO getEpochMs
   ts <- liftIO $ readIORef tsRef
@@ -350,6 +351,7 @@ setupDataChannel :: ConnConf ->
                     DOM.RTCDataChannel -> JSM ()
 setupDataChannel c pcRef dcRef tsRef dc = do
   let nid = _conn_local c
+  t0 <- liftIO getCurrentTime
 
   DOM.on dc RTCDataChannel.open $ do
     liftJSM $ (_conn_st_cb c) (ConnReady (_conn_type c))
@@ -370,7 +372,7 @@ setupDataChannel c pcRef dcRef tsRef dc = do
 
     bs' <- liftJSM $ jsval_to_bs dat
     case bs' of
-      Just bs -> liftJSM $ procMsg c tsRef bs
+      Just bs -> liftJSM $ procMsg c t0 tsRef bs
       Nothing -> do
         liftIO $ printf "%s: recv msg is not u8a/ab, drop\n" (show nid)
         liftJSM $ consoleLog dat
