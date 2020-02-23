@@ -116,36 +116,45 @@ data ConnManConf t =
 
   -- map (ogm_neig, src, epoch)
 rtblUp :: Map NID RouteEntry -> (NID, NID, Word64) -> Map NID RouteEntry
-rtblUp m (rid, src, epoch) = snd $ (flip runState) m $
-  case Map.lookup src m of
-  Nothing -> modify $
-             Map.insert src
-                        MkRouteEntry
-                        { _re_ts = epoch
-                        , _re_nid = [rid]
-                        , _re_ts' = 0
-                        , _re_nid' = []
-                        }
-  Just re -> if epoch > _re_ts re
-             then modify $
-                  Map.insert src $
-                  re { _re_ts  = epoch     , _re_nid  = [rid]
-                     , _re_ts' = _re_ts re , _re_nid' = _re_nid re
-                     }
-             else if epoch == _re_ts re
-                  then modify $
-                       Map.insert src $
-                       re { _re_nid = let l = _re_nid re in
-                                      if elem rid l then l else l ++ [rid]
+rtblUp m (rid, src, epoch) = snd $ (flip runState) m $ do
+  when (epoch > 0) $
+    case Map.lookup src m of
+    Nothing -> modify $
+               Map.insert src
+                          MkRouteEntry
+                          { _re_ts = epoch
+                          , _re_nid = [rid]
+                          , _re_ts' = 0
+                          , _re_nid' = []
                           }
-                  else return ()
+    Just re -> if epoch > _re_ts re
+               then modify $
+                    Map.insert src $
+                    re { _re_ts  = epoch     , _re_nid  = [rid]
+                       , _re_ts' = _re_ts re , _re_nid' = _re_nid re
+                       }
+               else if epoch == _re_ts re
+                    then modify $
+                         Map.insert src $
+                         re { _re_nid = let l = _re_nid re in
+                                        if elem rid l then l else l ++ [rid]
+                            }
+                    else return ()
+
+  -- if epoch == 0, we delete rid. NOTE, this is expensive
+  when (epoch == 0) $ modify $ Map.mapMaybe (rtblDelEntry rid)
+
+rtblDelEntry :: NID -> RouteEntry -> Maybe RouteEntry
+rtblDelEntry x re = let
+  nid = L.delete x $ _re_nid re
+  nid' = L.delete x $ _re_nid' re
+  in if L.null nid && L.null nid'
+     then Nothing
+     else Just $ re { _re_nid = nid, _re_nid' = nid' }
 
 rtblNextConn :: Map NID RouteEntry -> NID -> Map NID Conn -> Maybe (NID, Conn)
 rtblNextConn rtbl dst cmap =
-  case Map.lookup dst cmap of -- check local connected node
-    Just conn -> Just (dst, conn)
-    Nothing ->
-      case Map.lookup dst rtbl of
+  case Map.lookup dst rtbl of
       Nothing -> Nothing
       Just re -> let l = _re_nid re ++ _re_nid' re
                      n = L.find (flip Map.member cmap) l
@@ -210,9 +219,13 @@ connManNew c = do
                                           Nothing -> Map.delete nid m
                       ) Map.empty conn_cb_E
 
-  performEvent_ $ ffor stE $ \(nid, st) ->
-    when ((st == ConnTimeout) || (st == ConnFail)) $
+  performEvent_ $ ffor stE $ \(nid, st) -> do
+    when ((st == ConnTimeout) || (st == ConnFail)) $ do
          liftIO $ conn_cb_T (nid, Nothing)
+         liftIO $ rtblT (nid, nid, 0)
+    case st of
+      ConnReady _ -> liftIO $ getEpochMs >>= (rtblT . (nid, nid, ))
+      _ -> return ()
 
   -- TODO, filter from rxPreE, only left MsgSigned & dst is self
   let rxE = never
@@ -250,18 +263,9 @@ connManNew c = do
         mqttSt <- sample $ current mqtt_stateD
 
         cmap <- sample conn_cb_B
-        st <- sample $ current stD
-
-        -- we should only use ConnReady neighbor
-        -- should filter those in ConnSignal or other state
-        -- NOTE, here might have race condition(connection state change),
-        -- but just assume this is OK
-        let cmap' = Map.filterWithKey (\k _ -> case Map.lookup k st of
-                                               Just (ConnReady _) -> True
-                                               _ -> False
-                                      ) cmap
-
-        let conn' = rtblNextConn rtbl dst cmap'
+        -- now, rtbl will only containing routable node(include neighbor),
+        -- rtblNextConn will not check cmap before check rtbl
+        let conn' = rtblNextConn rtbl dst cmap
 
         if isJust conn'
         then do
