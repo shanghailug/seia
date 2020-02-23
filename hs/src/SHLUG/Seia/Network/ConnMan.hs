@@ -290,19 +290,29 @@ connManNew c = do
                          cbMap
 
   -- GOM gen
-  tick20 <- liftIO getCurrentTime >>= tickLossy 20
-  performEvent_ $ ffor tick20 $ \_ -> do
-    let ogm = MsgOGM { _msg_type = '\2'
-                     , _msg_src = nid
-                     , _msg_epoch = 0
-                     , _msg_sign = emptySign
-                     , _msg_hop = 0
-                     }
-    ogm1 <- liftIO $ msgFillEpoch ogm
-    let raw = toStrict $ encode ogm1
-    let rawS = conn_msg_sign raw
+  let sendOGM = do
+        let ogm = MsgOGM { _msg_type = '\2'
+                         , _msg_src = nid
+                         , _msg_epoch = 0
+                         , _msg_sign = emptySign
+                         , _msg_hop = 0
+                         }
+        ogm1 <- liftIO $ msgFillEpoch ogm
+        let raw = toStrict $ encode ogm1
+        let rawS = conn_msg_sign raw
 
-    liftIO $ rxPreT (nid, rawS)
+        liftIO $ rxPreT (nid, rawS)
+
+  -- send OGM every 20 sec
+  tick20 <- liftIO getCurrentTime >>= tickLossy 20
+  performEvent_ $ ffor tick20 $ const sendOGM
+
+  -- when send OGM to first online neighbor
+  performEvent_ $ ffor stE $ \(nid, st) -> case st of
+    ConnReady _ -> do
+      st <- sample $ current stD
+      when (L.null $ L.delete nid (Map.keys st)) sendOGM
+    _ -> return ()
 
   performEvent_ $ ffor rxPreE $ \(rid, m) -> do
     let msg = decode (fromStrict m) :: Msg
