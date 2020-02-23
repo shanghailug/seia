@@ -26,6 +26,7 @@ import qualified Data.Text as T
 
 import Data.Binary
 import Data.Time (getCurrentTime)
+import qualified Data.List as L
 
 import Control.Monad.IO.Class (MonadIO(..), liftIO)
 import Control.Monad (when, forever)
@@ -139,6 +140,18 @@ rtblUp m (rid, src, epoch) = snd $ (flip runState) m $
                           }
                   else return ()
 
+rtblNextConn :: Map NID RouteEntry -> NID -> Map NID Conn -> Maybe (NID, Conn)
+rtblNextConn rtbl dst cmap =
+  case Map.lookup dst cmap of -- check local connected node
+    Just conn -> Just (dst, conn)
+    Nothing ->
+      case Map.lookup dst rtbl of
+      Nothing -> Nothing
+      Just re -> let l = _re_nid re ++ _re_nid' re
+                     n = L.find (flip Map.member cmap) l
+                 in case n of
+                    Nothing -> Nothing
+                    Just n -> (n,) <$> Map.lookup n cmap
 
 connManNew :: ( Reflex t
               , TriggerEvent t m
@@ -236,13 +249,15 @@ connManNew c = do
         rtbl <- sample rtblB
         mqttSt <- sample $ current mqtt_stateD
 
-        let hasRoute = Map.member dst rtbl
+        cmap <- sample conn_cb_B
 
-        if hasRoute
+        let conn' = rtblNextConn rtbl dst cmap
+
+        if isJust conn'
         then do
-          let Just entry = Map.lookup dst rtbl
-          liftIO $ printf "route exist, via %s\n" (show entry)
-          liftIO $ printf "TODO" -- use conn_cb_B
+          let (n, conn) = fromJust conn'
+          liftIO $ printf "    route exist, via %s\n" (show n)
+          liftJSM $ (_conn_tx_cb conn) raw
         else if (mqttSt == MQTTOnline) && msgIsRTC raw
              then do
                liftIO $ printf "    MQTT is online, route RTC message via MQTT\n"
