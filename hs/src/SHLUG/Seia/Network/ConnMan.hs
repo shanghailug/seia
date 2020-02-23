@@ -247,14 +247,6 @@ connManNew c = do
            liftIO $ rxPreT (nid0, raw)
     return ()
 
-  ----------- monitor
-  tick5 <- liftIO getCurrentTime >>= tickLossy 5
-  performEvent_ $ ffor tick5 $ \_ -> do
-    st <- sample $ current stD
-    liftIO $ printf "st -> %s\n" (show st)
-    cb <- sample conn_cb_B
-    liftIO $ printf "conn_cb -> %s\n" (show $ Map.keys cb)
-
   ---------------------------- route
   let route dst raw = do
         liftIO $ printf "  route msg to %s\n" (show dst)
@@ -368,7 +360,9 @@ connManNew c = do
                      Just conn -> liftJSM $ (_conn_rtc_rx_cb conn)
                                             ( _msg_epoch msg
                                             , _msg_payload msg)
-                     Nothing -> liftIO $ printf "rtc msg dst not exist, drop\n"
+                     Nothing -> do
+                       liftIO $ printf "rtc msg dst not exist, drop\n"
+                       return ()
 
            else do let raw = _msg_payload msg
                    let on_conn_st st = liftIO $ stT (src, st)
@@ -401,7 +395,7 @@ connManNew c = do
   ----------------- tick
   tick1 <- liftIO getCurrentTime >>= tickLossy 1
   performEvent_ $ ffor tick1  $ \_ -> do
-    liftIO $ printf "======= tick =======\n"
+    --liftIO $ printf "======= tick =======\n"
     liftIO $ IO.hFlush IO.stdout
 
   -- automake conn check
@@ -419,7 +413,7 @@ connManNew c = do
       let nl' = filter ff nl
 
       when (length nl' == 0) $ do
-        liftIO $ putStrLn "  not enough bootstrap candidate"
+        --liftIO $ putStrLn "  not enough bootstrap candidate"
         fail "not enough bootstrap candidate"
 
       let dst = head nl' -- TODO, here just select first node
@@ -455,8 +449,17 @@ connManNew c = do
   performEvent_ $ ffor stE $ \(n, s) ->
     liftIO $ printf "node %s: %s\n" (show n) (show s)
 
+  performEvent_ $ ffor (updated stD) $ \st -> do
+    liftIO $ printf "st -> %s\n" (show st)
+    cb <- sample conn_cb_B
+    liftIO $ printf "conn_cb -> %s\n" (show $ Map.keys cb)
 
-
+  tick30 <- liftIO getCurrentTime >>= tickLossy 30
+  performEvent_ $ ffor tick30 $ \_ -> do
+    st <- sample $ current stD
+    liftIO $ printf "st -> %s\n" (show st)
+    cb <- sample conn_cb_B
+    liftIO $ printf "conn_cb -> %s\n" (show $ Map.keys cb)
 
 
   return MkConnMan { _conn_man_rx = rxE

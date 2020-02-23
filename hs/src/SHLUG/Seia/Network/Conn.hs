@@ -316,9 +316,9 @@ procMsg c t0 tsRef payload = do
     unless (msgVerify payload) $ fail "verify fail"
     when (msgIsHB payload) $ do
       t <- liftIO getCurrentTime
-      liftIO $ printf "----> hb: %s, up %s\n"
-                      (show t)
-                      (show $ diffUTCTime t t0)
+      --liftIO $ printf "----> hb: %s, up %s\n"
+      --                (show t)
+      --                (show $ diffUTCTime t t0)
       fail "heart beat"
 
     liftJSM $ _conn_rx_cb c $ payload
