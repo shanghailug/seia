@@ -199,10 +199,14 @@ connManNew c = do
   (rxPreE, rxPreT) <- newTriggerEvent
   -- current state of Conn
   (stE, stT) <- newTriggerEvent
-  stD <- accumDyn (\m (nid, st) -> if (st == ConnTimeout) || (st == ConnFail)
-                                   then Map.delete nid m
-                                   else Map.insert nid st m
-                  ) Map.empty stE
+  let stAccF m (nid, x) = case x of
+                          Left conn ->
+                            Map.insert nid (conn, ConnIdle) m
+                          Right st ->
+                            if connStEnd st then Map.delete nid m
+                            else Map.update (\(c,_) -> Just (c,st)) nid m
+
+  stD <- accumDyn stAccF Map.empty stE
 
   ------ current route table
   (rtblE, rtblT) <- newTriggerEvent
@@ -212,20 +216,11 @@ connManNew c = do
   (set_ts_E, set_ts_T) <- newTriggerEvent
   (set_bn_E, set_bn_T) <- newTriggerEvent
 
-  (conn_cb_E, conn_cb_T) <- newTriggerEvent
 
-  conn_cb_B <- accumB (\m (nid, conn') -> case conn' of
-                                          Just conn -> Map.insert nid conn m
-                                          Nothing -> Map.delete nid m
-                      ) Map.empty conn_cb_E
-
-  performEvent_ $ ffor stE $ \(nid, st) -> do
-    when ((st == ConnTimeout) || (st == ConnFail)) $ do
-         liftIO $ conn_cb_T (nid, Nothing)
-         liftIO $ rtblT (nid, nid, 0)
-    case st of
-      ConnReady _ -> liftIO $ getEpochMs >>= (rtblT . (nid, nid, ))
-      _ -> return ()
+  performEvent_ $ ffor stE $ \(nid, x) -> case x of
+    Right st | connStEnd st -> liftIO $ rtblT (nid, nid, 0)
+    Right (ConnReady _) -> liftIO $ getEpochMs >>= (rtblT . (nid, nid, ))
+    _ -> return ()
 
   -- TODO, filter from rxPreE, only left MsgSigned & dst is self
   let rxE = never
@@ -254,7 +249,7 @@ connManNew c = do
         rtbl <- sample rtblB
         mqttSt <- sample $ current mqtt_stateD
 
-        cmap <- sample conn_cb_B
+        cmap <- Map.map fst <$> sample (current stD)
         -- now, rtbl will only containing routable node(include neighbor),
         -- rtblNextConn will not check cmap before check rtbl
         let conn' = rtblNextConn rtbl dst cmap
@@ -279,8 +274,10 @@ connManNew c = do
         let ogm' = ogm { _msg_hop = hop + 1}
         let raw = toStrict $ encode ogm'
 
-        cmap <- sample conn_cb_B
-        st <- sample $ current $ stD
+        connSt <- sample $ current stD
+        let cmap = Map.map fst connSt
+        let st = Map.map snd connSt
+
         -- remote not ready neighbor
         let cmap' = Map.filterWithKey (\k _ -> case Map.lookup k st of
                                                Just (ConnReady _) -> True
@@ -310,8 +307,8 @@ connManNew c = do
   performEvent_ $ ffor tick20 $ const sendOGM
 
   -- when send OGM to first online neighbor
-  performEvent_ $ ffor stE $ \(nid, st) -> case st of
-    ConnReady _ -> do
+  performEvent_ $ ffor stE $ \(nid, x) -> case x of
+    Right (ConnReady _) -> do
       st <- sample $ current stD
       when (L.null $ L.delete nid (Map.keys st)) sendOGM
     _ -> return ()
@@ -319,7 +316,7 @@ connManNew c = do
   performEvent_ $ ffor rxPreE $ \(rid, m) -> do
     let msg = decode (fromStrict m) :: Msg
     liftIO $ printf "    process rxPre: %s\n" (sss 50 msg)
-    stMap <- sample $ current stD
+    connStMap <- sample $ current stD
     ts <- _conf_turn_server <$> sample (_conf c)
     rtbl <- sample rtblB
 
@@ -349,13 +346,13 @@ connManNew c = do
     when (msgIsRTC m) $ do
       let dst = _msg_dst msg
       let src = _msg_src msg
-      let st = Map.lookup src stMap
+      let st = snd <$> Map.lookup src connStMap
 
       if (dst /= nid) then route dst m
       else if ( (st /= Nothing) &&
                 (st /= Just ConnTimeout) &&
                 (st /= Just ConnFail) )
-           then do m <- sample conn_cb_B
+           then do m <- Map.map fst <$> sample (current stD)
                    case Map.lookup src m of
                      Just conn -> liftJSM $ (_conn_rtc_rx_cb conn)
                                             ( _msg_epoch msg
@@ -365,7 +362,7 @@ connManNew c = do
                        return ()
 
            else do let raw = _msg_payload msg
-                   let on_conn_st st = liftIO $ stT (src, st)
+                   let on_conn_st st = liftIO $ stT (src, Right st)
 
                    let cc = MkConnConf
                             { _conn_local = nid
@@ -381,7 +378,7 @@ connManNew c = do
                    -- should only create new Conn for MsgRTCReq
                    when (connIsReq raw) $
                      do conn <- connNew cc
-                        liftIO $ conn_cb_T (src, Just conn)
+                        liftIO $ stT (src, Left conn)
                         liftJSM $ (_conn_rtc_rx_cb conn)
                                   (_msg_epoch msg, raw)
                         return ()
@@ -430,7 +427,7 @@ connManNew c = do
 
     when (isJust dst') $ do
       let dst = fromJust dst'
-      let on_conn_st x = liftIO $ stT (dst, x)
+      let on_conn_st x = liftIO $ stT (dst, Right x)
       ts <- _conf_turn_server <$> sample (_conf c)
       conn <- connNew MkConnConf { _conn_remote = dst
                                  , _conn_local = nid
@@ -442,29 +439,33 @@ connManNew c = do
                                  , _conn_msg_sign = conn_msg_sign
                                  , _conn_nid_exist = False -- always F for client
                                  }
-      liftIO $ conn_cb_T (dst, Just conn)
+      liftIO $ stT (dst, Left conn)
 
     return ()
   ---------------------- trace stE change
-  performEvent_ $ ffor stE $ \(n, s) ->
-    liftIO $ printf "node %s: %s\n" (show n) (show s)
+  performEvent_ $ ffor stE $ \(n, x) ->
+    let str = case x of { Left _ -> "NEW"; Right st -> show st } in
+    liftIO $ printf "node %s: %s\n" (show n) str
 
   performEvent_ $ ffor (updated stD) $ \st -> do
-    liftIO $ printf "st -> %s\n" (show st)
-    cb <- sample conn_cb_B
-    liftIO $ printf "conn_cb -> %s\n" (show $ Map.keys cb)
+    liftIO $ printf "st -> %s\n" (show $ Map.map snd st)
 
   tick30 <- liftIO getCurrentTime >>= tickLossy 30
   performEvent_ $ ffor tick30 $ \_ -> do
     st <- sample $ current stD
-    liftIO $ printf "st -> %s\n" (show st)
-    cb <- sample conn_cb_B
-    liftIO $ printf "conn_cb -> %s\n" (show $ Map.keys cb)
+    liftIO $ printf "st -> %s\n" (show $ Map.map snd st)
+    rtbl <- sample rtblB
+    liftIO $ printf "rtbl -> %s\n" (show rtbl)
 
+  ----- output
+  let st_d = Map.map snd <$> stD
+  let st_e = ffor stE $
+             \(nid, x) ->
+             (nid, case x of { Left _ -> ConnIdle; Right st -> st})
 
   return MkConnMan { _conn_man_rx = rxE
-                   , _conn_man_st_d = stD
-                   , _conn_man_st_e = stE
+                   , _conn_man_st_d = st_d
+                   , _conn_man_st_e = st_e
                    , _conn_man_route_table = rtblB
                    , _conn_man_mqtt_state = mqtt_stateD
                    , _conf_set_turn_server = set_ts_E

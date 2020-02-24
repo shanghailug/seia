@@ -8,6 +8,7 @@ module SHLUG.Seia.Network.Conn ( connNew
                                , ConnConf(..)
                                , ConnType(..)
                                , connIsReq
+                               , connStEnd
                                ) where
 
 import SHLUG.Seia.Type
@@ -91,6 +92,8 @@ stEnd :: ConnState -> Bool
 stEnd ConnTimeout = True
 stEnd ConnFail = True
 stEnd _ = False
+
+connStEnd = stEnd
 
 -- TODO: serialize of RTCMsg might incompatible during version change
 data RTCMsgResType = RTCMsgResExist |
@@ -460,6 +463,7 @@ connNew c = do
                   (show $ _conn_local c)
                   (show $ _conn_remote c)
 
+  -- NOTE, before return, all updateSt to outside will drop
   liftJSM $ updateSt c stRef pcRef ConnIdle
 
   -- init rtc request to remote node
