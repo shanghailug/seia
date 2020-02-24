@@ -183,9 +183,9 @@ connManNew c = do
     return ()
 
   ---------------------------- route
-  (rxOgmE, rxOgmT) <- newTriggerEvent
+  (rxRouteE, rxRouteT) <- newTriggerEvent
   (rtblB, route) <- routeSetup nid conn_msg_sign
-                               mqtt_txT mqtt_stateD stE stD rxOgmE
+                               mqtt_txT mqtt_stateD stE stD rxRouteE
 
   performEvent_ $ ffor rxPreE $ \(rid, m) -> do
     let msg = decode (fromStrict m) :: Msg
@@ -194,7 +194,8 @@ connManNew c = do
     ts <- _conf_turn_server <$> sample (_conf c)
     rtbl <- sample rtblB
 
-    when (msgIsOGM m) $ liftIO (rxOgmT (rid, msg))
+    when (msgIsOGM m) $ liftIO (rxRouteT (rid, msg))
+    when (msgIsRoute m) $ liftIO (rxRouteT (rid, msg))
 
     when (msgIsGeneral m) $ do
       let dst = _msg_dst msg

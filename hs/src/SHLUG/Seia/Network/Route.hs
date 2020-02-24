@@ -1,6 +1,7 @@
 {-# language TupleSections #-}
 {-# language BlockArguments #-}
 {-# language FlexibleContexts #-}
+{-# language DeriveGeneric, DeriveDataTypeable #-}
 
 module SHLUG.Seia.Network.Route ( RouteEntry(..)
                                 , routeSetup
@@ -14,6 +15,8 @@ import SHLUG.Seia.Network.MQTT
 import SHLUG.Seia.Conf
 import SHLUG.Seia.Rt
 import SHLUG.Seia.Helper
+
+import GHC.Generics
 
 import Data.Map.Strict (Map(..))
 import qualified Data.Map.Strict as Map
@@ -54,6 +57,10 @@ data RouteEntry = MkRouteEntry { _re_ts :: Word64
                                , _re_nid' :: [NID]
                                } deriving (Eq, Show)
 
+data RouteMsg = MkRouteInit [NID] -- init route info
+                            deriving (Eq, Show, Generic)
+
+instance Binary RouteMsg
 
   -- map (ogm_neig, src, epoch)
 rtblUp :: Map NID RouteEntry -> (NID, NID, Word64) -> Map NID RouteEntry
@@ -123,7 +130,7 @@ routeSetup :: ( Reflex t
               Event t (NID, Msg) ->
               m ( Behavior t (Map NID RouteEntry)
                 , NID -> ByteString -> Performable m ())
-routeSetup nid sign mqtt_txT mqtt_stateD stE stD rxOgmE = do
+routeSetup nid sign mqtt_txT mqtt_stateD stE stD rxMsgE = do
 
   (rtblE, rtblT) <- newTriggerEvent
   rtblB <- accumB rtblUp Map.empty rtblE
@@ -204,8 +211,33 @@ routeSetup nid sign mqtt_txT mqtt_stateD stE stD rxOgmE = do
       when (L.null $ L.delete nid (Map.keys st)) sendOGM
     _ -> return ()
 
+  -- send MkRouteInit msg to new client
+  performEvent_ $ ffor stE $ \(rid, x) -> case x of
+    Right (ConnReady ConnIsServer) -> do
+          st <- sample $ current stD
+          epoch <- liftIO getEpochMs
+          rtbl <- sample rtblB
+          case Map.lookup rid st of
+               Just (conn, _) ->
+                    let rmsg = MkRouteInit $ Map.keys rtbl
+                        msg = MsgSigned { _msg_type = '\5'
+                                        , _msg_src = nid
+                                        , _msg_dst = rid
+                                        , _msg_epoch = epoch
+                                        , _msg_payload = toStrict $ encode rmsg
+                                        , _msg_sign = emptySign
+                                        }
+                        raw = toStrict $ encode msg
+                    -- direct send to neighbor
+                    in do liftIO $ _conn_tx_cb conn $ sign raw
+               Nothing -> return ()
+    _ -> return ()
 
-  performEvent_ $ ffor rxOgmE $ \(rid, ogm) -> do
+  performEvent_ $ ffor rxMsgE $ \(rid, msg) -> do
+    let tp = _msg_type msg
+    -- msg ogm
+    when (tp == '\2') $ do
+      let ogm = msg
       let hop = _msg_hop ogm
       let src = _msg_src ogm
       rtbl <- sample rtblB
@@ -222,6 +254,20 @@ routeSetup nid sign mqtt_txT mqtt_stateD stE stD rxOgmE = do
                       Just re -> _msg_epoch ogm > _re_ts re
 
       when ((hop < 4) && newRecord) $ routeOGM rid ogm
+
+    -- msg route
+    when (tp == '\5') $ do
+      let rmsg = decode $ fromStrict $ _msg_payload msg
+      let src = _msg_src msg
+      case rmsg of
+        MkRouteInit nidL -> do
+          st <- Map.map snd <$> (sample $ current stD)
+          -- only src is neighbor, and is client mode
+          when (Map.lookup src st == Just (ConnReady ConnIsClient)) $ do
+            --- use epoch = 1, so only insert when dst is not exist
+            -- not use epoch = 0 for 0 means delete entry
+            liftIO $ mapM_ (\x -> rtblT (src, x, 1)) nidL
+        _ -> return ()
 
       return ()
 

@@ -8,7 +8,7 @@ module SHLUG.Seia.Msg
   , msgSign
   , emptySign
   , msgTrivalTest
-  , msgIsHB, msgIsGeneral, msgIsOGM, msgIsRTC
+  , msgIsHB, msgIsGeneral, msgIsOGM, msgIsRTC, msgIsRoute
   , msgIsSigned
   , msgFillEpoch
   , msgHB
@@ -47,11 +47,14 @@ _mt_hb      = '\1'
 _mt_ogm     = '\2'
 _mt_general = '\3'
 _mt_rtc     = '\4'
+_mt_route   = '\5'
 
 msgSignType :: MsgType -> MsgSignType
 msgSignType t | t == _mt_hb                = MsgSignValid
               | t == _mt_ogm               = MsgSign1
-              | elem t [_mt_general, _mt_rtc]  = MsgSign2
+              | elem t [_mt_general
+                       , _mt_rtc
+                       , _mt_route]        = MsgSign2
               | True                       = MsgSignInvalid
 
 
@@ -64,7 +67,7 @@ data Msg = MsgHB { _msg_type :: !MsgType } | -- type 1
                   -- other runtime data
                   , _msg_hop :: !Word8
                   } |
-           -- type 3, 4, MsgSign2
+           -- type 3, 4, 5 MsgSign2
            MsgSigned { _msg_type :: !MsgType
                      , _msg_src :: !NID
                      , _msg_dst :: !NID
@@ -93,6 +96,9 @@ msgIsRTC x = msgType x == _mt_rtc
 
 msgIsOGM :: ByteString -> Bool
 msgIsOGM x = msgType x == _mt_ogm
+
+msgIsRoute :: ByteString -> Bool
+msgIsRoute x = msgType x == _mt_route
 
 msgIsSigned :: ByteString -> Bool
 msgIsSigned x = let st = msgSignType (msgType x) in st == MsgSign2
@@ -178,7 +184,7 @@ instance Binary Msg where
                                          , _msg_sign = sign
                                          , _msg_hop = hop
                                          }
-             _ | elem tp [_mt_general, _mt_rtc] -> do
+             _ | elem tp [_mt_general, _mt_rtc, _mt_route] -> do
                 src <- get
                 dst <- get
                 epoch <- Get.getWord64be
