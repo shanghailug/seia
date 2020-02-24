@@ -478,8 +478,8 @@ connNew c = do
     let timeout = do runJSM (updateSt c stRef pcRef ConnTimeout) ctx
                      myThreadId >>= killThread
 
-    -- should become ConnSignal within 5sec
-    threadDelay $ 5 * 1000 * 1000
+    -- should become ConnSignal within 10sec
+    threadDelay $ 10 * 1000 * 1000
     st1 <- readIORef stRef
     when (st1 == ConnIdle) timeout
 
