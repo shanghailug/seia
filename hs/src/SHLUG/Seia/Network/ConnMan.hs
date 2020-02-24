@@ -9,6 +9,7 @@ module SHLUG.Seia.Network.ConnMan ( connManNew
 import SHLUG.Seia.Type
 import SHLUG.Seia.Msg
 import SHLUG.Seia.Network.Conn
+import SHLUG.Seia.Network.Route
 import SHLUG.Seia.Network.MQTT
 import SHLUG.Seia.Conf
 import SHLUG.Seia.Rt
@@ -46,12 +47,6 @@ import Reflex
 import Language.Javascript.JSaddle ( JSM(..), MonadJSM(..)
                                    , liftJSM
                                    )
-
-data RouteEntry = MkRouteEntry { _re_ts :: Word64
-                               , _re_nid :: [NID]
-                               , _re_ts' :: Word64
-                               , _re_nid' :: [NID]
-                               } deriving (Eq, Show)
 
 {-
 ConnMan
@@ -94,7 +89,6 @@ when startup
    1. collect current online direct connected node, and is in server mode
    2. sort by online time,
    3. update to bootstrap list
-
 -}
 
 
@@ -113,54 +107,6 @@ data ConnManConf t =
                 , _conf :: Behavior t Conf
                 }
 
-
-  -- map (ogm_neig, src, epoch)
-rtblUp :: Map NID RouteEntry -> (NID, NID, Word64) -> Map NID RouteEntry
-rtblUp m (rid, src, epoch) = snd $ (flip runState) m $ do
-  when (epoch > 0) $
-    case Map.lookup src m of
-    Nothing -> modify $
-               Map.insert src
-                          MkRouteEntry
-                          { _re_ts = epoch
-                          , _re_nid = [rid]
-                          , _re_ts' = 0
-                          , _re_nid' = []
-                          }
-    Just re -> if epoch > _re_ts re
-               then modify $
-                    Map.insert src $
-                    re { _re_ts  = epoch     , _re_nid  = [rid]
-                       , _re_ts' = _re_ts re , _re_nid' = _re_nid re
-                       }
-               else if epoch == _re_ts re
-                    then modify $
-                         Map.insert src $
-                         re { _re_nid = let l = _re_nid re in
-                                        if elem rid l then l else l ++ [rid]
-                            }
-                    else return ()
-
-  -- if epoch == 0, we delete rid. NOTE, this is expensive
-  when (epoch == 0) $ modify $ Map.mapMaybe (rtblDelEntry rid)
-
-rtblDelEntry :: NID -> RouteEntry -> Maybe RouteEntry
-rtblDelEntry x re = let
-  nid = L.delete x $ _re_nid re
-  nid' = L.delete x $ _re_nid' re
-  in if L.null nid && L.null nid'
-     then Nothing
-     else Just $ re { _re_nid = nid, _re_nid' = nid' }
-
-rtblNextConn :: Map NID RouteEntry -> NID -> Map NID Conn -> Maybe (NID, Conn)
-rtblNextConn rtbl dst cmap =
-  case Map.lookup dst rtbl of
-      Nothing -> Nothing
-      Just re -> let l = _re_nid re ++ _re_nid' re
-                     n = L.find (flip Map.member cmap) l
-                 in case n of
-                    Nothing -> Nothing
-                    Just n -> (n,) <$> Map.lookup n cmap
 
 connManNew :: ( Reflex t
               , TriggerEvent t m
@@ -209,18 +155,12 @@ connManNew c = do
   stD <- accumDyn stAccF Map.empty stE
 
   ------ current route table
-  (rtblE, rtblT) <- newTriggerEvent
-  rtblB <- accumB rtblUp Map.empty rtblE
 
   -- set turn server & set bootstrap node
   (set_ts_E, set_ts_T) <- newTriggerEvent
   (set_bn_E, set_bn_T) <- newTriggerEvent
 
 
-  performEvent_ $ ffor stE $ \(nid, x) -> case x of
-    Right st | connStEnd st -> liftIO $ rtblT (nid, nid, 0)
-    Right (ConnReady _) -> liftIO $ getEpochMs >>= (rtblT . (nid, nid, ))
-    _ -> return ()
 
   -- TODO, filter from rxPreE, only left MsgSigned & dst is self
   let rxE = never
@@ -243,75 +183,9 @@ connManNew c = do
     return ()
 
   ---------------------------- route
-  let route dst raw = do
-        liftIO $ printf "  route msg to %s\n" (show dst)
-
-        rtbl <- sample rtblB
-        mqttSt <- sample $ current mqtt_stateD
-
-        cmap <- Map.map fst <$> sample (current stD)
-        -- now, rtbl will only containing routable node(include neighbor),
-        -- rtblNextConn will not check cmap before check rtbl
-        let conn' = rtblNextConn rtbl dst cmap
-
-        if isJust conn'
-        then do
-          let (n, conn) = fromJust conn'
-          liftIO $ printf "    route exist, via %s\n" (show n)
-          liftJSM $ (_conn_tx_cb conn) raw
-        else if (mqttSt == MQTTOnline) && msgIsRTC raw
-             then do
-               liftIO $ printf "    MQTT is online, route RTC message via MQTT\n"
-               liftIO $ mqtt_txT (dst, raw)
-             else do
-               liftIO $ printf "    no route, can not relay via MQTT, drop\n"
-
-        return ()
-
-  -- m -> JSM
-  let routeOGM src ogm = do
-        let hop = _msg_hop ogm
-        let ogm' = ogm { _msg_hop = hop + 1}
-        let raw = toStrict $ encode ogm'
-
-        connSt <- sample $ current stD
-        let cmap = Map.map fst connSt
-        let st = Map.map snd connSt
-
-        -- remote not ready neighbor
-        let cmap' = Map.filterWithKey (\k _ -> case Map.lookup k st of
-                                               Just (ConnReady _) -> True
-                                               _ -> False
-                                      ) cmap
-
-        liftJSM $ sequence_ $
-          Map.mapWithKey (\k v -> when (k /= src) (_conn_tx_cb v $ raw))
-                         cmap'
-
-  -- GOM gen
-  let sendOGM = do
-        let ogm = MsgOGM { _msg_type = '\2'
-                         , _msg_src = nid
-                         , _msg_epoch = 0
-                         , _msg_sign = emptySign
-                         , _msg_hop = 0
-                         }
-        ogm1 <- liftIO $ msgFillEpoch ogm
-        let raw = toStrict $ encode ogm1
-        let rawS = conn_msg_sign raw
-
-        liftIO $ rxPreT (nid, rawS)
-
-  -- send OGM every 20 sec
-  tick20 <- liftIO getCurrentTime >>= tickLossy 20
-  performEvent_ $ ffor tick20 $ const sendOGM
-
-  -- when send OGM to first online neighbor
-  performEvent_ $ ffor stE $ \(nid, x) -> case x of
-    Right (ConnReady _) -> do
-      st <- sample $ current stD
-      when (L.null $ L.delete nid (Map.keys st)) sendOGM
-    _ -> return ()
+  (rxOgmE, rxOgmT) <- newTriggerEvent
+  (rtblB, route) <- routeSetup nid conn_msg_sign
+                               mqtt_txT mqtt_stateD stE stD rxOgmE
 
   performEvent_ $ ffor rxPreE $ \(rid, m) -> do
     let msg = decode (fromStrict m) :: Msg
@@ -320,24 +194,7 @@ connManNew c = do
     ts <- _conf_turn_server <$> sample (_conf c)
     rtbl <- sample rtblB
 
-    when (msgIsOGM m) $ do
-      let ogm = decode $ fromStrict m
-      let hop = _msg_hop ogm
-      let src = _msg_src ogm
-
-      liftIO $ printf "  OGM from %s ..., src %s ...\n"
-                      (take 7 $ show rid)
-                      (take 7 $ show (_msg_src ogm))
-
-      -- update route event
-      liftIO $ rtblT (rid, _msg_src ogm, _msg_epoch ogm)
-      let newRecord = case Map.lookup src rtbl of
-                      Nothing -> True
-                      Just re -> _msg_epoch ogm > _re_ts re
-
-      when ((hop < 4) && newRecord) $ routeOGM rid ogm
-
-      return ()
+    when (msgIsOGM m) $ liftIO (rxOgmT (rid, msg))
 
     when (msgIsGeneral m) $ do
       let dst = _msg_dst msg
