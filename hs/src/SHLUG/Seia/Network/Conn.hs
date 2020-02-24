@@ -37,7 +37,7 @@ import Control.Monad (when, unless, forM_)
 
 import Control.Monad.Trans.Maybe (runMaybeT, MaybeT(..))
 
-import Control.Concurrent (forkIO, threadDelay)
+import Control.Concurrent (forkIO, threadDelay, myThreadId, killThread)
 
 import Data.IORef
 import qualified Data.Text as T
@@ -475,9 +475,18 @@ connNew c = do
   -- or there will be race condition.
   ctx <- liftJSM askJSM
   liftIO $ forkIO $ do
-    threadDelay $ 10 * 1000 * 1000
-    ts <- readIORef tsRef
-    when (ts < 0) $ runJSM (updateSt c stRef pcRef ConnTimeout) ctx
+    let timeout = do runJSM (updateSt c stRef pcRef ConnTimeout) ctx
+                     myThreadId >>= killThread
+
+    -- should become ConnSignal within 5sec
+    threadDelay $ 5 * 1000 * 1000
+    st1 <- readIORef stRef
+    when (st1 == ConnIdle) timeout
+
+    -- then, should finish Signal within 30sec
+    threadDelay $ 30 * 1000 * 1000
+    st2 <- readIORef stRef
+    when (st2 == ConnSignal) timeout
 
   return MkConn { _conn_tx_cb = onTx c dcRef
                 , _conn_rtc_rx_cb = onRTCRx c stRef pcRef dcRef tsRef
