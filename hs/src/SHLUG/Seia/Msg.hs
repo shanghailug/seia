@@ -3,23 +3,24 @@
 
 module SHLUG.Seia.Msg
   ( Msg(..)
-  , msgType, msgType'
   , msgVerify
   , msgSign
+  , msgGetSignature
   , emptySign
   , msgTrivalTest
-  , msgIsHB, msgIsGeneral, msgIsOGM, msgIsRTC, msgIsRoute
-  , msgIsSigned
   , msgFillEpoch
-  , msgHB
   ) where
 
 import SHLUG.Seia.Type
 import SHLUG.Seia.Helper
 
+import SHLUG.Seia.Msg.Envelope
+import SHLUG.Seia.Msg.Payload
+
 import Data.ByteString (ByteString(..))
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BS.Lazy
+import Data.ByteString.Lazy(fromStrict, toStrict)
+import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.UTF8 as UTF8
 
 import Data.Binary
@@ -30,99 +31,59 @@ import Data.Data
 import GHC.Generics
 import Data.Int
 
+import qualified Data.Text as T
+import Data.Text (Text(..))
+
+import qualified Data.List as L
+import Data.Maybe (fromMaybe)
+
 import Crypto.ECC.Ed25519.Sign (dverify, dsign)
 import Crypto.ECC.Ed25519.Internal.Ed25519(SecKey(..))
 
 --import Test.QuickCheck
+tpHeartbeart :: Word8
+tpHeartbeart = 1
 
-data MsgSignType = MsgSignInvalid |
-                   MsgSignValid |
-                   MsgSign1 |
-                   MsgSign2 deriving (Eq, Show)
-type MsgType = Char
+tpEnvelopedSignal :: Word8
+tpEnvelopedSignal = 2
 
+tpSigned :: Word8
+tpSigned = 3
 
-_mt_invalid = '\0'
-_mt_hb      = '\1'
-_mt_ogm     = '\2'
-_mt_general = '\3'
-_mt_rtc     = '\4'
-_mt_route   = '\5'
-
-msgSignType :: MsgType -> MsgSignType
-msgSignType t | t == _mt_hb                = MsgSignValid
-              | t == _mt_ogm               = MsgSign1
-              | elem t [_mt_general
-                       , _mt_rtc
-                       , _mt_route]        = MsgSign2
-              | True                       = MsgSignInvalid
-
-
-data Msg = MsgHB { _msg_type :: !MsgType } | -- type 1
-           -- type 2, MsgSign1
-           MsgOGM { _msg_type :: !MsgType
-                  , _msg_src :: !NID
-                  , _msg_epoch :: !Word64
-                  , _msg_sign :: !ByteString -- 64 byte
-                  -- other runtime data
-                  , _msg_hop :: !Word8
-                  } |
-           -- type 3, 4, 5 MsgSign2
-           MsgSigned { _msg_type :: !MsgType
-                     , _msg_src :: !NID
-                     , _msg_dst :: !NID
-                     , _msg_epoch :: !Word64
-                     , _msg_payload :: !ByteString
-                     , _msg_sign :: !ByteString
-                     } |
-           MsgInvalid { _msg_type :: !MsgType } -- type = 0
+data Msg = MsgHeartbeat | -- '\1'
+           -- type 2, MsgSign1, '\2'
+           MsgEnvelopedSignal { _msg_src   :: !NID
+                              , _msg_epoch :: !Word64
+                              , _msg_sign  :: !ByteString -- 64 byte
+                              -- envelope, can be modified without resign
+                              , _msg_envelope :: Envelope
+                            } |
+           -- type 3
+           MsgSigned { _msg_src     :: !NID
+                     , _msg_dst     :: !NID
+                     , _msg_epoch   :: !Word64
+                     , _msg_payload :: Payload
+                     , _msg_sign    :: !ByteString
+                     }
            deriving (Eq, Show, Typeable, Data)
-
-msgHB = MsgHB _mt_hb
-
-msgType' :: ByteString -> (Char, Int)
-msgType' s = case UTF8.decode s of
-             Nothing     -> (_mt_invalid, -1)
-             Just (c, l) -> (c, l)
-
-msgIsHB :: ByteString -> Bool
-msgIsHB x = let tp = msgType x in tp == _mt_hb
-
-msgIsGeneral :: ByteString -> Bool
-msgIsGeneral x = let tp = msgType x in tp == _mt_general
-
-msgIsRTC :: ByteString -> Bool
-msgIsRTC x = msgType x == _mt_rtc
-
-msgIsOGM :: ByteString -> Bool
-msgIsOGM x = msgType x == _mt_ogm
-
-msgIsRoute :: ByteString -> Bool
-msgIsRoute x = msgType x == _mt_route
-
-msgIsSigned :: ByteString -> Bool
-msgIsSigned x = let st = msgSignType (msgType x) in st == MsgSign2
-
-msgType :: ByteString -> Char
-msgType = fst . msgType'
 
 msgVerify :: ByteString -> Bool
 msgVerify x = let
-  (tp, clen) = msgType' x
+  tp = BS.head x
   len = BS.length x
 
-  res' = case msgSignType tp of
-    MsgSignValid -> Right True
-    MsgSign1     -> Left $ f1 x
-    MsgSign2     -> Left $ f2 x
-    _            -> Right False
+  res' = fromMaybe (Right False) $
+         L.lookup tp [ (tpHeartbeart     , Right True)
+                     , (tpEnvelopedSignal, Left $ f1 x)
+                     , (tpSigned         , Left $ f2 x)
+                     ]
 
   f1 x = let
-    src = decode $ BS.Lazy.fromStrict $ BS.drop clen x
-    dat = BS.take (clen + 34 + 8) x
-    sig = BS.take 64 $ BS.drop (clen + 34 + 8) x in (getUID src, dat, sig)
+    src = decode $ fromStrict $ BS.drop 1 x
+    dat = BS.take (1 + 34 + 8) x
+    sig = BS.take 64 $ BS.drop (1 + 34 + 8) x in (getUID src, dat, sig)
 
-  f2 msg = let src = decode $ BS.Lazy.fromStrict $ BS.drop clen x
+  f2 msg = let src = decode $ fromStrict $ BS.drop 1 x
                dat = BS.take (len - 64) x
                sig = BS.drop (len - 64) x
            in (getUID src, dat, sig)
@@ -134,113 +95,121 @@ msgVerify x = let
          Right _ -> True
          Left  _ -> False
 
-
 msgSign :: ByteString -> ByteString -> ByteString
 msgSign sk s = let
-  (tp, clen) = msgType' s
+  tp = BS.head s
   key = SecKeyBytes sk
-  sign1 = let s1 = BS.take (clen + 34 + 8) s
-              s2 = BS.drop (clen + 34 + 8 + 64) s
+  sign1 = let s1 = BS.take (1 + 34 + 8) s
+              s2 = BS.drop (1 + 34 + 8 + 64) s
               Right s3 = dsign key s1
           in s1 <> s3 <> s2
   sign2 = let s1 = BS.take (BS.length s - 64) s
               Right s2 = dsign key s1
           in s1 <> s2
-  in case msgSignType tp of
-     MsgSign1 -> sign1
-     MsgSign2 -> sign2
-     _ -> s
+  in fromMaybe s $ L.lookup tp [ (tpEnvelopedSignal, sign1)
+                               , (tpSigned, sign2)]
 
 emptySign = BS.replicate 64 0
 
 -- NOTE: need optimize to avoid put twice
 instance Binary Msg where
   put t = case t of
-          MsgHB {}  -> put $ _msg_type t
-          MsgOGM {} -> do put $ _msg_type t
-                          put $ _msg_src t
-                          Put.putWord64be $ _msg_epoch t
-                          Put.putByteString $ _msg_sign t
-                          Put.putWord8 $ _msg_hop t
-          MsgSigned {} -> do put $ _msg_type t
+          MsgHeartbeat {}  -> putWord8 tpHeartbeart
+          MsgEnvelopedSignal {} -> do putWord8 tpEnvelopedSignal
+                                      put $ _msg_src t
+                                      Put.putWord64be $ _msg_epoch t
+                                      Put.putByteString $ _msg_sign t
+                                      put $ _msg_envelope t
+          MsgSigned {} -> do putWord8 tpSigned
                              put $ _msg_src t
                              put $ _msg_dst t
                              Put.putWord64be $ _msg_epoch t
-                             Put.putByteString $ _msg_payload t
+                             put $ _msg_payload t
                              Put.putByteString $ _msg_sign t
-          _ -> put _mt_invalid
 
-  get = do tp <- get
+  get = do tp <- getWord8
            case tp of
-             _ | tp == _mt_hb -> return $ MsgHB tp
-             _ | tp == _mt_ogm ->
+             _ | tp == tpHeartbeart -> return $ MsgHeartbeat
+             _ | tp == tpEnvelopedSignal ->
                         do src <- get
                            epoch <- Get.getWord64be
                            sign <- Get.getByteString 64
-                           hop <- Get.getWord8
-                           return MsgOGM { _msg_type = tp
-                                         , _msg_src = src
-                                         , _msg_epoch = epoch
-                                         , _msg_sign = sign
-                                         , _msg_hop = hop
-                                         }
-             _ | elem tp [_mt_general, _mt_rtc, _mt_route] -> do
+                           evp <- get
+                           return MsgEnvelopedSignal { _msg_src = src
+                                                     , _msg_epoch = epoch
+                                                     , _msg_sign = sign
+                                                     , _msg_envelope = evp
+                                                     }
+             _ | tp == tpSigned -> do
                 src <- get
                 dst <- get
                 epoch <- Get.getWord64be
-                remain <- BS.Lazy.toStrict <$> Get.getRemainingLazyByteString
-                let plen = BS.length remain - 64
-                let payload = BS.take plen remain
-                let sign = BS.drop plen remain
-                return MsgSigned { _msg_type = tp
-                                 , _msg_src = src
+                payload <- get
+                sign <- Get.getByteString 64
+                return MsgSigned { _msg_src = src
                                  , _msg_dst = dst
                                  , _msg_epoch = epoch
                                  , _msg_payload = payload
                                  , _msg_sign = sign
                                  }
-             _ -> return $ MsgInvalid _mt_invalid
+             _ -> fail $ "Invalid type " ++ show tp
+
+msgFillEpoch :: Msg -> IO Msg
+msgFillEpoch msg = case msg of
+                     MsgSigned {} ->
+                       getEpochMs >>= \e -> return msg { _msg_epoch = e }
+                     MsgEnvelopedSignal {} ->
+                       getEpochMs >>= \e -> return msg { _msg_epoch = e }
+                     _ -> return msg
+
+msgGetSignature :: ByteString -> ByteString
+msgGetSignature m =
+  let tp = BS.head m
+      len = BS.length m in
+  case () of
+  _ | tp == tpEnvelopedSignal -> BS.take 64 $ BS.drop (1 + 34 + 8) m
+  _ | tp == tpSigned -> BS.drop (len - 64) m
+  _ -> emptySign
 
 -- TODO, quick check
 msgT1 :: ByteString -> Msg -> IO ()
 msgT1 sk m = do
   putStrLn "\n\n----"
   putStrLn $ "m = " ++ show m
-  let b1 = BS.Lazy.toStrict $ encode m
+  let b1 = toStrict $ encode m
   putStrLn $ "enc = " ++ show b1
   putStrLn $ "vfy = " ++ show (msgVerify b1)
   let b2 = msgSign sk b1
   putStrLn $ "sgn = " ++ show b2
   putStrLn $ "vfy = " ++ show (msgVerify b2)
-  let m1 = decode $ BS.Lazy.fromStrict b1 :: Msg
-  let m2 = decode $ BS.Lazy.fromStrict b2 :: Msg
+  let m1 = decode $ fromStrict b1 :: Msg
+  let m2 = decode $ fromStrict b2 :: Msg
   putStrLn $ "dec = " ++ show m1
   putStrLn $ "eq  = " ++ show (m1 == m)
   putStrLn $ ">>  = " ++ show m2
   putStrLn $ "eq  = " ++ show (decode (encode m2) == m2)
 
-msgFillEpoch :: Msg -> IO Msg
-msgFillEpoch msg = case msg of
-                     MsgSigned {} ->
-                       getEpochMs >>= \e -> return msg { _msg_epoch = e }
-                     MsgOGM {} ->
-                       getEpochMs >>= \e -> return msg { _msg_epoch = e }
-                     _ -> return msg
+  case m2 of
+    MsgEnvelopedSignal {} ->
+      putStrLn $ "eq = " ++ show (_msg_sign m2 == msgGetSignature b2)
+    MsgSigned {} ->
+      putStrLn $ "eq = " ++ show (_msg_sign m2 == msgGetSignature b2)
+    _ -> return ()
 
 msgTrivalTest :: NID -> ByteString -> IO ()
 msgTrivalTest nid sk = do
-  msgT1 sk $ MsgHB '\1'
+  msgT1 sk $ MsgHeartbeat
 
   t1 <- getEpochMs
-  let m1 = MsgOGM _mt_ogm nid t1 emptySign 123
+  let m1 = MsgEnvelopedSignal nid t1 emptySign (EvpOGM 123)
   msgT1 sk m1
 
   t2 <- getEpochMs
-  let m2 = MsgSigned _mt_general nid nid0 t2 (BS.Lazy.toStrict $ encode m1)
+  let m2 = MsgSigned nid nid0 t2 (MkRTCMsg (MkRTCSignal RTCOffer $ T.pack "abcde"))
                      emptySign
   msgT1 sk m2
 
   t3 <- getEpochMs
-  let m3 = MsgSigned _mt_rtc nid nid0 t3 (BS.Lazy.toStrict $ encode m2)
+  let m3 = MsgSigned nid nid0 t3 (MkRouteMsg (MkRouteInit [nid]))
                      emptySign
   msgT1 sk m3

@@ -1,5 +1,5 @@
 // update when update seia-VER.js
-VERSION = 1;
+VERSION = 2;
 
 function is_nodejs() {
     return (typeof(window._rt.cwd) == 'string');

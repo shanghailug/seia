@@ -1,6 +1,7 @@
 {-# language FlexibleContexts #-}
 {-# language BlockArguments #-}
 {-# language TupleSections #-}
+{-# language ScopedTypeVariables #-}
 
 module SHLUG.Seia.Network.ConnMan ( connManNew
                                   , ConnMan(..)
@@ -8,6 +9,9 @@ module SHLUG.Seia.Network.ConnMan ( connManNew
                                   ) where
 import SHLUG.Seia.Type
 import SHLUG.Seia.Msg
+import SHLUG.Seia.Msg.Payload
+import SHLUG.Seia.Msg.Envelope
+
 import SHLUG.Seia.Network.Conn
 import SHLUG.Seia.Network.Route
 import SHLUG.Seia.Network.MQTT
@@ -102,7 +106,7 @@ data ConnMan t = MkConnMan { _conn_man_rx :: Event t (NID, ByteString)
                            }
 
 data ConnManConf t =
-  MkConnManConf { _conn_man_tx :: Event t ByteString
+  MkConnManConf { _conn_man_tx :: Event t (NID, Payload)
                 , _rt_conf :: RtConf
                 , _conf :: Behavior t Conf
                 }
@@ -170,81 +174,88 @@ connManNew c = do
 
 
   ------------------ mqtt rx
-  performEvent_ $ ffor mqtt_rxE $ \raw -> do
-    runMaybeT $ do
-           when (not $ msgIsRTC raw) $
-             liftIO (printf "MQTT: not RTC msg, drop\n") >>
-             fail "not rtc msg"
-           when (not $ msgVerify raw) $
-             liftIO (printf "MQTT: msg verify fail, drop\n") >>
-             fail "verify fail"
-
-           liftIO $ rxPreT (nid0, raw)
-    return ()
+  performEvent_ $ ffor mqtt_rxE $ \raw ->
+    case decodeOrFail (fromStrict raw) of
+      Left _ -> return ()
+      Right (_, _, msg @ MsgSigned { _msg_payload = MkRTCMsg _ }) -> do
+           when (msgVerify raw) $ liftIO $ rxPreT (nid0, msg, raw)
+      _ -> return ()
 
   ---------------------------- route
   (rxRouteE, rxRouteT) <- newTriggerEvent
   (rtblB, route) <- routeSetup nid conn_msg_sign
                                mqtt_txT mqtt_stateD stE stD rxRouteE
 
-  performEvent_ $ ffor rxPreE $ \(rid, m) -> do
-    let msg = decode (fromStrict m) :: Msg
+  performEvent_ $ ffor rxPreE $ \(rid, msg, raw) -> do
     liftIO $ printf "    process rxPre: %s\n" (sss 50 msg)
     connStMap <- sample $ current stD
     ts <- _conf_turn_server <$> sample (_conf c)
     rtbl <- sample rtblB
 
-    when (msgIsOGM m) $ liftIO (rxRouteT (rid, msg))
-    when (msgIsRoute m) $ liftIO (rxRouteT (rid, msg))
+    case msg of
+      MsgEnvelopedSignal { _msg_envelope = EvpOGM {} } ->
+        liftIO $ rxRouteT (rid, msg)
+      -- route message
+      MsgSigned { _msg_payload = MkRouteMsg _ } ->
+        liftIO $ rxRouteT (rid, msg)
 
-    when (msgIsGeneral m) $ do
-      let dst = _msg_dst msg
-      when (dst /= nid) $ route dst m
+      MsgSigned { _msg_dst = dst } | dst /= nid ->
+        route msg raw
 
-    when (msgIsRTC m) $ do
-      let dst = _msg_dst msg
-      let src = _msg_src msg
-      let st = snd <$> Map.lookup src connStMap
+      -- rtc message, and dst should == nid
+      MsgSigned { _msg_payload = MkRTCMsg rmsg } -> do
+        let dst = _msg_dst msg
+        let src = _msg_src msg
+        let st = snd <$> Map.lookup src connStMap
+        when (dst /= nid) $ fail "should sent to self"
 
-      if (dst /= nid) then route dst m
-      else if ( (st /= Nothing) &&
-                (st /= Just ConnTimeout) &&
-                (st /= Just ConnFail) )
-           then do m <- Map.map fst <$> sample (current stD)
-                   case Map.lookup src m of
-                     Just conn -> liftJSM $ (_conn_rtc_rx_cb conn)
-                                            ( _msg_epoch msg
-                                            , _msg_payload msg)
-                     Nothing -> do
-                       liftIO $ printf "rtc msg dst not exist, drop\n"
-                       return ()
+        if ( (st /= Nothing) &&
+             (st /= Just ConnTimeout) &&
+             (st /= Just ConnFail) )
+        then do m <- Map.map fst <$> sample (current stD)
+                case Map.lookup src m of
+                  Just conn -> liftJSM $ (_conn_rtc_rx_cb conn)
+                                         (_msg_epoch msg, rmsg)
+                  Nothing -> do liftIO $ printf "rtc msg dst not exist, drop\n"
+                                return ()
 
-           else do let raw = _msg_payload msg
-                   let on_conn_st st = liftIO $ stT (src, Right st)
-
-                   let cc = MkConnConf
-                            { _conn_local = nid
-                            , _conn_remote = src
-                            , _conn_main_ver = main_ver
-                            , _conn_type = ConnIsServer
-                            , _conn_st_cb = on_conn_st
-                            , _conn_rx_cb = liftIO . rxPreT . (src,)
-                            , _conn_turn_server = ts
-                            , _conn_msg_sign = conn_msg_sign
-                            , _conn_nid_exist = Map.member src rtbl -- req node exist?
-                            }
-                   -- should only create new Conn for MsgRTCReq
-                   when (connIsReq raw) $
-                     do conn <- connNew cc
-                        liftIO $ stT (src, Left conn)
-                        liftJSM $ (_conn_rtc_rx_cb conn)
-                                  (_msg_epoch msg, raw)
-                        return ()
+        else do let on_conn_st st = liftIO $ stT (src, Right st)
+                let cc = MkConnConf
+                         { _conn_local = nid
+                         , _conn_remote = src
+                         , _conn_main_ver = main_ver
+                         , _conn_type = ConnIsServer
+                         , _conn_st_cb = on_conn_st
+                         , _conn_rx_cb = liftIO . rxPreT . uncurry (src,,)
+                         , _conn_turn_server = ts
+                         , _conn_msg_sign = conn_msg_sign
+                         , _conn_nid_exist = Map.member src rtbl -- req node exist?
+                         }
+                -- should only create new Conn for MsgRTCReq
+                case rmsg of
+                  MkRTCReq _ -> do conn <- connNew cc
+                                   liftIO $ stT (src, Left conn)
+                                   liftJSM $ (_conn_rtc_rx_cb conn)
+                                             (_msg_epoch msg, rmsg)
+                                   return ()
+                  _ -> return ()
+      -- other signed message
+      _ -> return ()
 
   -- tx related
   let txE = _conn_man_tx c
-  performEvent_ $ ffor txE $ \raw -> when (msgIsGeneral raw) $
-                                       liftIO (rxPreT (nid, raw))
+  performEvent_ $ ffor txE $ \(rid, pl) -> do
+    let msg = MsgSigned { _msg_src = nid
+                        , _msg_dst = rid
+                        , _msg_epoch = 0
+                        , _msg_payload = pl
+                        , _msg_sign = emptySign
+                        }
+    msg1 <- liftIO $ msgFillEpoch msg
+    let raw = conn_msg_sign $ toStrict $ encode msg1
+    let msg2 = msg1 { _msg_sign = msgGetSignature raw }
+
+    liftIO $ rxPreT (nid, msg2, raw)
 
 
   ----------------- tick
@@ -282,7 +293,6 @@ connManNew c = do
       return dst
 
 
-
     when (isJust dst') $ do
       let dst = fromJust dst'
       let on_conn_st x = liftIO $ stT (dst, Right x)
@@ -292,7 +302,7 @@ connManNew c = do
                                  , _conn_main_ver = main_ver
                                  , _conn_type = ConnIsClient
                                  , _conn_st_cb = on_conn_st
-                                 , _conn_rx_cb = liftIO . rxPreT . (dst,)
+                                 , _conn_rx_cb = liftIO . rxPreT . uncurry (dst,,)
                                  , _conn_turn_server = ts
                                  , _conn_msg_sign = conn_msg_sign
                                  , _conn_nid_exist = False -- always F for client

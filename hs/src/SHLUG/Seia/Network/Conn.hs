@@ -7,12 +7,12 @@ module SHLUG.Seia.Network.Conn ( connNew
                                , Conn(..)
                                , ConnConf(..)
                                , ConnType(..)
-                               , connIsReq
                                , connStEnd
                                ) where
 
 import SHLUG.Seia.Type
 import SHLUG.Seia.Msg
+import SHLUG.Seia.Msg.Payload
 
 import SHLUG.Seia.Rt
 import SHLUG.Seia.Helper
@@ -95,25 +95,6 @@ stEnd _ = False
 
 connStEnd = stEnd
 
--- TODO: serialize of RTCMsg might incompatible during version change
-data RTCMsgResType = RTCMsgResExist |
-                     RTCMsgResIncompatiable |
-                     RTCMsgResOK
-                   deriving (Eq, Show, Generic)
-
-instance Binary RTCMsgResType
-
-data RTCSignalType = RTCOffer | RTCAnswer | RTCCandidate
-                     deriving (Eq, Show, Generic)
-instance Binary RTCSignalType
-
-data RTCMsg =  MkRTCReq Int |
-               MkRTCRes RTCMsgResType |
-               MkRTCSignal RTCSignalType Text
-            deriving (Eq, Show, Generic)
-
-instance Binary RTCMsg
-
 {-
 Conn
 
@@ -145,7 +126,7 @@ data ConnConf = MkConnConf { _conn_local :: NID
                            , _conn_st_cb :: ConnState -> JSM ()
                            -- verified message, directly from dst
                            -- or from this node, for RTC
-                           , _conn_rx_cb :: ByteString -> JSM ()
+                           , _conn_rx_cb :: (Msg, ByteString) -> JSM ()
                            , _conn_turn_server :: [Text]
                            , _conn_msg_sign :: ByteString -> ByteString
                            , _conn_nid_exist :: Bool -- for MkRTCRes
@@ -156,7 +137,7 @@ data Conn = MkConn { _conn_tx_cb :: ByteString -> JSM ()
 
                    -- verifyed rtc message to this node
                    -- and src is _conn_dst
-                   , _conn_rtc_rx_cb :: (Word64, ByteString) -> JSM ()
+                   , _conn_rtc_rx_cb :: (Word64, RTCMsg) -> JSM ()
                    }
 
 promiseH0 :: (MonadCatch m, DOM.MonadJSM m) => DOM.PromiseRejected -> m (Maybe a)
@@ -269,9 +250,8 @@ onRTCRx :: ConnConf ->
            IORef (Maybe DOM.RTCPeerConnection) ->
            IORef (Maybe DOM.RTCDataChannel) ->
            IORef Int64 ->
-           (Word64, ByteString) -> JSM ()
-onRTCRx c stRef pcRef dcRef tsRef (epoch, raw) = do
-  let msg = decode $ fromStrict raw :: RTCMsg
+           (Word64, RTCMsg) -> JSM ()
+onRTCRx c stRef pcRef dcRef tsRef (epoch, msg) = do
   liftIO $ printf "    on rtc rx: %s\n" (sss 50 msg) >> IO.hFlush IO.stdout
 
   pc' <- liftIO $ readIORef pcRef
@@ -309,34 +289,28 @@ onRTCRx c stRef pcRef dcRef tsRef (epoch, raw) = do
 
   return ()
 
-connIsReq :: ByteString -> Bool
-connIsReq raw =
-  let msg = decode $ fromStrict raw :: RTCMsg in
-  case msg of
-    MkRTCReq _ -> True
-    _ -> False
-
 
 procMsg :: ConnConf -> UTCTime -> IORef Int64 -> ByteString -> JSM ()
 procMsg c t0 tsRef payload = do
   -- update timestamp
   liftIO $ getEpochMs >>= atomicWriteIORef tsRef
-  -- todo, verify
-  runMaybeT $ do
-    unless (msgVerify payload) $ fail "verify fail"
-    when (msgIsHB payload) $ do
-      t <- liftIO getCurrentTime
-      let dt = diffUTCTime t t0
-      when (floor (dt*2) `mod` 120 == 0) $
-        liftIO $ printf "----> uptime %s : %s\n" (sss 8 (_conn_remote c)) (show dt)
-      --liftIO $ printf "----> hb: %s, up %s\n"
-      --                (show t)
-      --                (show $ diffUTCTime t t0)
-      fail "heart beat"
+  case decodeOrFail (fromStrict payload) of
+       -- fail to decode
+       Left _ -> return ()
+       -- heart beat
+       Right (_, _, MsgHeartbeat) -> do
+             t <- liftIO getCurrentTime
+             let dt = diffUTCTime t t0
+             when (floor (dt*2) `mod` 120 == 0) $
+                  liftIO $ printf "----> uptime %s : %s\n"
+                                  (sss 8 (_conn_remote c)) (show dt)
+                  --liftIO $ printf "----> hb: %s, up %s\n"
+                  --                (show t)
+                  --                (show $ diffUTCTime t t0)
 
-    liftJSM $ _conn_rx_cb c $ payload
-
-  return ()
+       Right (_, _, msg) -> do
+             when (msgVerify payload) do
+                  liftJSM $ _conn_rx_cb c $ (msg, payload)
 
 -- TODO, check first message with 2 x N tolerantion, then 1 x N
 heartbeatChecker :: JSVal -> ConnConf ->
@@ -376,7 +350,7 @@ setupDataChannel c stRef pcRef dcRef tsRef dc = do
     liftIO $ printf "  %s: data channel open\n" (show nid)
     ctx <- askJSM
 
-    let bs = toStrict $ encode $ msgHB
+    let bs = toStrict $ encode $ MsgHeartbeat
     pkt <- liftJSM $ bs_to_u8a bs >>= u8a_to_jsval
 
     liftIO $ forkIO $ runJSM (heartbeatChecker pkt c stRef pcRef tsRef dc) ctx
@@ -427,16 +401,17 @@ onTx c dcRef payload = do
 
 sendRTCMsg :: ConnConf -> RTCMsg -> JSM ()
 sendRTCMsg c rmsg = do
-  let msg = MsgSigned { _msg_type = '\4' -- TODO, should not hard encode
-                      , _msg_src = _conn_local c
+  let msg = MsgSigned { _msg_src = _conn_local c
                       , _msg_dst = _conn_remote c
-                      , _msg_epoch = 0 -- TODO
-                      , _msg_payload = toStrict $ encode rmsg
+                      , _msg_epoch = 0
+                      , _msg_payload = MkRTCMsg rmsg
                       , _msg_sign = emptySign
                       }
   msg1 <- msgFillEpoch msg
   let dat = (_conn_msg_sign c) (toStrict $ encode msg1)
-  (_conn_rx_cb c) dat
+  let sig = msgGetSignature dat
+  let msg2 = msg1 { _msg_sign = sig }
+  (_conn_rx_cb c) (msg2, dat)
 
 updateSt :: ConnConf -> IORef ConnState ->
             IORef (Maybe DOM.RTCPeerConnection) -> ConnState -> JSM ()

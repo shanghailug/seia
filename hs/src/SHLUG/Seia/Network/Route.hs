@@ -9,7 +9,11 @@ module SHLUG.Seia.Network.Route ( RouteEntry(..)
 
 
 import SHLUG.Seia.Type
+
 import SHLUG.Seia.Msg
+import SHLUG.Seia.Msg.Payload
+import SHLUG.Seia.Msg.Envelope
+
 import SHLUG.Seia.Network.Conn
 import SHLUG.Seia.Network.MQTT
 import SHLUG.Seia.Conf
@@ -57,10 +61,6 @@ data RouteEntry = MkRouteEntry { _re_ts :: Word64
                                , _re_nid' :: [NID]
                                } deriving (Eq, Show)
 
-data RouteMsg = MkRouteInit [NID] -- init route info
-                            deriving (Eq, Show, Generic)
-
-instance Binary RouteMsg
 
   -- map (ogm_neig, src, epoch)
 rtblUp :: Map NID RouteEntry -> (NID, NID, Word64) -> Map NID RouteEntry
@@ -129,7 +129,7 @@ routeSetup :: ( Reflex t
               Dynamic t (Map NID (Conn, ConnState)) ->
               Event t (NID, Msg) ->
               m ( Behavior t (Map NID RouteEntry)
-                , NID -> ByteString -> Performable m ())
+                , Msg -> ByteString -> Performable m ())
 routeSetup nid sign mqtt_txT mqtt_stateD stE stD rxMsgE = do
 
   (rtblE, rtblT) <- newTriggerEvent
@@ -141,7 +141,9 @@ routeSetup nid sign mqtt_txT mqtt_stateD stE stD rxMsgE = do
     Right (ConnReady _) -> liftIO $ getEpochMs >>= (rtblT . (nid, nid, ))
     _ -> return ()
 
-  let route dst raw = do
+  -- ensure msg is Signed Message
+  let route msg raw = do
+        let dst = _msg_dst msg
         liftIO $ printf "  route msg to %s\n" (show dst)
 
         rtbl <- sample rtblB
@@ -151,13 +153,16 @@ routeSetup nid sign mqtt_txT mqtt_stateD stE stD rxMsgE = do
         -- now, rtbl will only containing routable node(include neighbor),
         -- rtblNextConn will not check cmap before check rtbl
         let conn' = rtblNextConn rtbl dst cmap
+        let msgIsRTC = case msg of
+                       MsgSigned { _msg_payload = MkRTCMsg _ } -> True
+                       _ -> False
 
         if isJust conn'
         then do
           let (n, conn) = fromJust conn'
           liftIO $ printf "    route exist, via %s\n" (show n)
           liftJSM $ (_conn_tx_cb conn) raw
-        else if (mqttSt == MQTTOnline) && msgIsRTC raw
+        else if (mqttSt == MQTTOnline) && msgIsRTC
              then do
                liftIO $ printf "    MQTT is online, route RTC message via MQTT\n"
                liftIO $ mqtt_txT (dst, raw)
@@ -168,8 +173,10 @@ routeSetup nid sign mqtt_txT mqtt_stateD stE stD rxMsgE = do
 
   -- m -> JSM
   let routeOGM src ogm = do
-        let hop = _msg_hop ogm
-        let ogm' = ogm { _msg_hop = hop + 1}
+        let evp = _msg_envelope ogm
+        let hop = _evp_ogm_hop evp
+        let evp' = evp { _evp_ogm_hop = hop + 1}
+        let ogm' = ogm { _msg_envelope = evp' }
         let raw = toStrict $ encode ogm'
 
         connSt <- sample $ current stD
@@ -189,12 +196,11 @@ routeSetup nid sign mqtt_txT mqtt_stateD stE stD rxMsgE = do
 
   -- GOM gen
   let genOGM = do
-        let ogm = MsgOGM { _msg_type = '\2'
-                         , _msg_src = nid
-                         , _msg_epoch = 0
-                         , _msg_sign = emptySign
-                         , _msg_hop = 0
-                         }
+        let ogm = MsgEnvelopedSignal { _msg_src = nid
+                                     , _msg_epoch = 0
+                                     , _msg_sign = emptySign
+                                     , _msg_envelope = EvpOGM 0
+                                     }
         ogm1 <- liftIO $ msgFillEpoch ogm
         let raw = sign $ toStrict $ encode ogm1
         return $ decode $ fromStrict raw
@@ -220,11 +226,10 @@ routeSetup nid sign mqtt_txT mqtt_stateD stE stD rxMsgE = do
           case Map.lookup rid st of
                Just (conn, _) ->
                     let rmsg = MkRouteInit $ Map.keys rtbl
-                        msg = MsgSigned { _msg_type = '\5'
-                                        , _msg_src = nid
+                        msg = MsgSigned { _msg_src = nid
                                         , _msg_dst = rid
                                         , _msg_epoch = epoch
-                                        , _msg_payload = toStrict $ encode rmsg
+                                        , _msg_payload = MkRouteMsg rmsg
                                         , _msg_sign = emptySign
                                         }
                         raw = toStrict $ encode msg
@@ -233,12 +238,11 @@ routeSetup nid sign mqtt_txT mqtt_stateD stE stD rxMsgE = do
                Nothing -> return ()
     _ -> return ()
 
-  performEvent_ $ ffor rxMsgE $ \(rid, msg) -> do
-    let tp = _msg_type msg
+  performEvent_ $ ffor rxMsgE $ \(rid, msg) ->
+    case msg of
     -- msg ogm
-    when (tp == '\2') $ do
+    MsgEnvelopedSignal { _msg_envelope = EvpOGM hop } -> do
       let ogm = msg
-      let hop = _msg_hop ogm
       let src = _msg_src ogm
       rtbl <- sample rtblB
 
@@ -256,8 +260,7 @@ routeSetup nid sign mqtt_txT mqtt_stateD stE stD rxMsgE = do
       when ((hop < 4) && newRecord) $ routeOGM rid ogm
 
     -- msg route
-    when (tp == '\5') $ do
-      let rmsg = decode $ fromStrict $ _msg_payload msg
+    MsgSigned { _msg_payload = MkRouteMsg rmsg } -> do
       let src = _msg_src msg
       case rmsg of
         MkRouteInit nidL -> do

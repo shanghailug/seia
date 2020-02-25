@@ -56,7 +56,7 @@ import qualified Data.Text as T
 import Data.Word ( Word16 )
 
 mainVersion :: Int
-mainVersion = 1
+mainVersion = 2
 
 foreign import javascript interruptible
   "window._rt.store.get($1, function (err, res) { $c(err, res); });"
