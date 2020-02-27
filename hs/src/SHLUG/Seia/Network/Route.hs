@@ -93,6 +93,8 @@ rtblUp m (rid, src, epoch) = snd $ (flip runState) m $ do
 
   -- if epoch == 0, we delete rid. NOTE, this is expensive
   when (epoch == 0) $ modify $ Map.mapMaybe (rtblDelEntry rid)
+  -- when epoch == 1, src is down
+  when (epoch == 1) $ modify $ Map.delete src
 
 rtblDelEntry :: NID -> RouteEntry -> Maybe RouteEntry
 rtblDelEntry x re = let
@@ -212,6 +214,21 @@ routeSetup nid sign mqtt_txT mqtt_stateD stE stD rxMsgE = do
   tickOGM <- liftIO getCurrentTime >>= tickLossy (realToFrac $ _cc_cm_ogm_interval confConst)
   performEvent_ $ ffor tickOGM $ const sendOGM
 
+  ------ rtbl clean up
+  let timeoutNodeE = ffor (attach rtblB tickOGM) $ \(rtbl, tick) ->
+        Map.keys $ Map.filter (
+          \re -> let ts = fromIntegral (_re_ts re) / 1000
+                     t0 = posixSecondsToUTCTime ts
+                     diff = diffUTCTime (_tickInfo_lastUTC tick) t0
+                 in diff > realToFrac (_cc_cm_ogm_timeout confConst)
+        ) rtbl
+
+  performEvent_ $ ffor timeoutNodeE $ \n -> do
+    liftIO $ mapM_ (\x -> rtblT (x, x, 1)) n
+    liftIO $ printf "  timeout node: %s\n" (show n)
+
+  -- TODO, need save recent msg, routead msg will drop
+
   -- when send OGM to first online neighbor
   performEvent_ $ ffor stE $ \(nid, x) -> case x of
     Right (ConnReady _) -> do
@@ -269,9 +286,9 @@ routeSetup nid sign mqtt_txT mqtt_stateD stE stD rxMsgE = do
           st <- Map.map snd <$> (sample $ current stD)
           -- only src is neighbor, and is client mode
           when (Map.lookup src st == Just (ConnReady ConnIsClient)) $ do
-            --- use epoch = 1, so only insert when dst is not exist
-            -- not use epoch = 0 for 0 means delete entry
-            liftIO $ mapM_ (\x -> rtblT (src, x, 1)) nidL
+            --- just use current time as epoch
+            epoch <- liftIO $ getEpochMs
+            liftIO $ mapM_ (\x -> rtblT (src, x, epoch)) nidL
         _ -> return ()
 
       return ()
