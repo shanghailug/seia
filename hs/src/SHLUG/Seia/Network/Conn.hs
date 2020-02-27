@@ -16,6 +16,7 @@ import SHLUG.Seia.Msg.Payload
 
 import SHLUG.Seia.Rt
 import SHLUG.Seia.Helper
+import SHLUG.Seia.Conf
 
 import Data.ByteString ( ByteString(..) )
 import Data.Text (Text(..))
@@ -329,7 +330,7 @@ heartbeatChecker pkt c stRef pcRef tsRef dc = do
   now <- liftIO getEpochMs
   ts <- liftIO $ readIORef tsRef
 
-  if now - ts > 1000
+  if now - ts > floor (_cc_conn_heartbeat_timeout confConst * 1000)
   then updateSt c stRef pcRef ConnTimeout
   else heartbeatChecker pkt c stRef pcRef tsRef dc
 
@@ -454,12 +455,12 @@ connNew c = do
                      myThreadId >>= killThread
 
     -- should become ConnSignal within 10sec
-    threadDelay $ 10 * 1000 * 1000
+    threadDelay $ (_cc_conn_req_timeout confConst) * 1000 * 1000
     st1 <- readIORef stRef
     when (st1 == ConnIdle) timeout
 
     -- then, should finish Signal within 30sec
-    threadDelay $ 30 * 1000 * 1000
+    threadDelay $ (_cc_conn_signal_timeout confConst) * 1000 * 1000
     st2 <- readIORef stRef
     when (st2 == ConnSignal) timeout
 

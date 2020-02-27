@@ -33,7 +33,9 @@ import Data.Text (Text(..))
 import qualified Data.Text as T
 
 import Data.Binary
-import Data.Time (getCurrentTime)
+import Data.Time (getCurrentTime, diffUTCTime)
+import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
+
 import qualified Data.List as L
 
 import Control.Monad.IO.Class (MonadIO(..), liftIO)
@@ -206,9 +208,9 @@ routeSetup nid sign mqtt_txT mqtt_stateD stE stD rxMsgE = do
         return $ decode $ fromStrict raw
 
   let sendOGM = genOGM >>= routeOGM nid
-  -- send OGM every 20 sec
-  tick20 <- liftIO getCurrentTime >>= tickLossy 20
-  performEvent_ $ ffor tick20 $ const sendOGM
+  -- send OGM periodically
+  tickOGM <- liftIO getCurrentTime >>= tickLossy (realToFrac $ _cc_cm_ogm_interval confConst)
+  performEvent_ $ ffor tickOGM $ const sendOGM
 
   -- when send OGM to first online neighbor
   performEvent_ $ ffor stE $ \(nid, x) -> case x of
