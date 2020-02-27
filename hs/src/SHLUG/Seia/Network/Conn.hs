@@ -303,9 +303,8 @@ procMsg c t0 tsRef payload = do
              when (floor (dt*2) `mod` 120 == 0) $
                   liftIO $ printf "----> uptime %s : %s\n"
                                   (sss 8 (_conn_remote c)) (show dt)
-                  --liftIO $ printf "----> hb: %s, up %s\n"
-                  --                (show t)
-                  --                (show $ diffUTCTime t t0)
+             --liftIO $ printf "----> hb: %s, up %s\n"
+             --                (show t) (show dt)
 
        Right (_, _, msg) -> do
              when (msgVerify payload) do

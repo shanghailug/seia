@@ -205,7 +205,7 @@ routeSetup nid sign mqtt_txT mqtt_stateD stE stD rxMsgE = do
                                      }
         ogm1 <- liftIO $ msgFillEpoch ogm
         let raw = sign $ toStrict $ encode ogm1
-        return $ decode $ fromStrict raw
+        return $ ogm1 { _msg_sign = msgGetSignature raw }
 
   let sendOGM = genOGM >>= routeOGM nid
   -- send OGM periodically
