@@ -56,8 +56,9 @@ import Data.Text ( Text(..) )
 import qualified Data.Text as T
 import Data.Word ( Word16 )
 
-mainVersion :: Int
-mainVersion = 2
+-- major for protocol compatiable check
+mainVersion :: (Int, Int)
+mainVersion = (2, 0)
 
 foreign import javascript interruptible
   "window._rt.store.get($1, function (err, res) { $c(err, res); });"
@@ -219,7 +220,7 @@ data RtConf = RtConf
             { _rt_is_nodejs :: Bool
             , _rt_sid :: Maybe Word16
             , _rt_preloader_url :: Text
-            , _rt_main_version :: Int
+            , _rt_main_version :: (Int, Int)
             , _rt_version :: Int
             -- from windw._rt.conf
             , _rt_conf_turn_server :: [Text]
