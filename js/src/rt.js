@@ -32,6 +32,7 @@ if (!window._rt.conf.turn_server) {
 
 if (!window._rt.conf.bootstrap_node) {
     window._rt.conf.bootstrap_node = [
-        "9dp3gc3r7gngw3xhcs69bwyj3xaa75zodx5huw7rksyjs8in9qyy:0"
+        "9dp3gc3r7gngw3xhcs69bwyj3xaa75zodx5huw7rksyjs8in9qyy:0",
+        "d531szhkbbjbd6q716mraz8qamji8akyyu17up8gbe731qtiw66y:0"
     ];
 }

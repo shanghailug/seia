@@ -48,6 +48,7 @@ import qualified Data.JSString as JSString
 
 import Data.ByteString(ByteString(..))
 import qualified Data.ByteString as BS
+import Data.Maybe (fromMaybe)
 
 import Control.Lens ((^.))
 
@@ -231,6 +232,15 @@ rtConf = do
   sid' <- liftIO $ js_rt_sid
   ver <- liftIO js_rt_version
   url <- liftIO js_rt_preloader_url
+
+  ts' <- jsg "_rt" ^. js "conf" ^. js "turn_server"
+  bn' <- jsg "_rt" ^. js "conf" ^. js "bootstrap_node"
+
+  ts <- fromMaybe [] <$> fromJSVal ts'
+  bn1 <- fromMaybe [] <$> fromJSVal bn'
+
+  let bn = map read bn1
+
   --turn_server_list <- jsg "window" ^. js "_rt" ^. js "conf" ^. js "turn_server_list
   return $ RtConf { _rt_is_nodejs = is_nodejs
                   , _rt_sid = if sid' < 0 then Nothing else Just (toEnum sid')
@@ -238,6 +248,6 @@ rtConf = do
                   , _rt_main_version = mainVersion
                   , _rt_version = ver
                   --
-                  , _rt_conf_turn_server = [] -- TODO
-                  , _rt_conf_fallback_bootstrap_node = [] -- TODO
+                  , _rt_conf_turn_server = ts
+                  , _rt_conf_fallback_bootstrap_node = bn
                   }
