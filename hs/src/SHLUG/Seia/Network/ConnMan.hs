@@ -19,6 +19,8 @@ import SHLUG.Seia.Conf
 import SHLUG.Seia.Rt
 import SHLUG.Seia.Helper
 
+import System.Random (randomRIO)
+
 import Data.Map.Strict (Map(..))
 import qualified Data.Map.Strict as Map
 
@@ -282,7 +284,8 @@ connManNew c = do
         --liftIO $ putStrLn "  not enough bootstrap candidate"
         fail "not enough bootstrap candidate"
 
-      let dst = head nl' -- TODO, here just select first node
+      idx <- liftIO $ randomRIO (0, length nl' - 1)
+      let dst = nl' !! idx -- TODO
       when ((mqtt_state /= MQTTOnline) &&
             (not $ Map.member dst rtbl)) $ do
                  liftIO $ putStrLn "mqtt offline or not routable, skip"
