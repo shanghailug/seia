@@ -17,6 +17,8 @@ data Payload = MkRTCMsg RTCMsg |
 instance Binary Payload
 
 ---------------------- RTC -----------------------
+-- TODO: for RTCMsgResExist,
+-- server: continue, client: if first conn, then quit, else continue
 data RTCMsgResType = RTCMsgResExist |
                      RTCMsgResIncompatiable |
                      RTCMsgResOK

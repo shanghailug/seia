@@ -258,16 +258,14 @@ onRTCRx c stRef pcRef dcRef tsRef (epoch, msg) = do
   pc' <- liftIO $ readIORef pcRef
   case msg of
     MkRTCReq ver ->
-      if _conn_nid_exist c
+      if ver /= _conn_main_ver c
       then do updateSt c stRef pcRef ConnFail
-              sendRTCMsg c (MkRTCRes RTCMsgResExist)
-      else if ver /= _conn_main_ver c
-           then do updateSt c stRef pcRef ConnFail
-                   sendRTCMsg c (MkRTCRes RTCMsgResIncompatiable)
-           else do updateSt c stRef pcRef ConnSignal
-                   sendRTCMsg c (MkRTCRes RTCMsgResOK)
+              sendRTCMsg c (MkRTCRes RTCMsgResIncompatiable)
+      else do updateSt c stRef pcRef ConnSignal
+              sendRTCMsg c (MkRTCRes if _conn_nid_exist c
+                                     then RTCMsgResExist else RTCMsgResOK)
     MkRTCRes res ->
-      if res /= RTCMsgResOK
+      if res == RTCMsgResIncompatiable -- TODO, check ResExist
       then do updateSt c stRef pcRef ConnFail
               liftIO $ putStrLn $ "rtc req fail: " ++ show res
       else do updateSt c stRef pcRef ConnSignal
