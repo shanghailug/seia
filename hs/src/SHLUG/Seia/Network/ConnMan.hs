@@ -24,6 +24,12 @@ import System.Random (randomRIO)
 import Data.Map.Strict (Map(..))
 import qualified Data.Map.Strict as Map
 
+import Data.Set (Set(..))
+import qualified Data.Set as Set
+
+import Data.Sequence (Seq(..), (|>))
+import qualified Data.Sequence as Seq
+
 import Data.ByteString (ByteString(..))
 import qualified Data.ByteString as BS
 import Data.ByteString.Lazy (fromStrict, toStrict)
@@ -34,6 +40,8 @@ import qualified Data.Text as T
 import Data.Binary
 import Data.Time (getCurrentTime)
 import qualified Data.List as L
+
+import Data.Foldable (toList, foldr')
 
 import Control.Monad.IO.Class (MonadIO(..), liftIO)
 import Control.Monad (when, forever)
@@ -114,6 +122,7 @@ data ConnManConf t =
                 }
 
 
+
 connManNew :: ( Reflex t
               , TriggerEvent t m
               , MonadSample t m
@@ -189,11 +198,58 @@ connManNew c = do
   (rtblB, route) <- routeSetup nid conn_msg_sign
                                mqtt_txT mqtt_stateD stE stD rxRouteE
 
-  performEvent_ $ ffor rxPreE $ \(rid, msg, raw) -> do
+  ----------------------- rxPre, filter already processed message
+  (oldMsg_E, oldMsg_T) <- newTriggerEvent
+  oldMsg_B <- accumB (\(set, seq) op ->
+              case op of
+                Left ep -> let func = (< ep) . snd
+                               sigs = map fst $ toList $ Seq.takeWhileL func seq
+                               seq' = Seq.dropWhileL func seq
+                               set' = foldr' Set.delete set sigs
+                               in (set', seq')
+                Right (sig, ep) -> (Set.insert sig set, seq |> (sig, ep))
+              ) (Set.empty, Seq.empty) oldMsg_E
+
+  -- scan old message
+  tick5 <- liftIO getCurrentTime >>= tickLossy 5
+  performEvent_ $ ffor tick5 $ \_ -> do
+    ms <- liftIO $ getEpochMs
+    (set, seq) <- sample oldMsg_B
+    --liftIO $ printf "set: %d/%d\n" (Set.size set) (Seq.length seq)
+    liftIO $ oldMsg_T $ Left (ms - 5000)
+
+
+  let saveOldMsg' sig ep = do
+        oldMsg_T $ Right (sig, ep)
+
+  let saveOldMsg m ep = do
+        case m of
+          MsgEnvelopedSignal { _msg_sign = sig } ->
+                             saveOldMsg' sig ep
+
+          MsgSigned { _msg_sign = sig } ->
+                    saveOldMsg' sig ep
+
+          _ -> return ()
+
+  let rxPreE' = attachWithMaybe (\(set, _) (rid, msg, raw) ->
+                case msg of
+                MsgEnvelopedSignal { _msg_sign = sig } ->
+                  if Set.member sig set then Nothing else Just (rid, msg, raw)
+                MsgSigned { _msg_sign = sig } ->
+                  if Set.member sig set then Nothing else Just (rid, msg, raw)
+                _ -> Just (rid, msg, raw)
+                ) oldMsg_B rxPreE
+
+  performEvent_ $ ffor rxPreE' $ \(rid, msg, raw) -> do
     liftIO $ printf "    process rxPre: %s\n" (sss 50 msg)
     connStMap <- sample $ current stD
     ts <- _conf_turn_server <$> sample (_conf c)
     rtbl <- sample rtblB
+
+    -- use local time, avoid time mismatche between node cause
+    ep <- liftIO $ getEpochMs
+    liftIO $ saveOldMsg msg ep
 
     case msg of
       MsgEnvelopedSignal { _msg_envelope = EvpOGM {} } ->
