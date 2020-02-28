@@ -8,6 +8,7 @@ module SHLUG.Seia.Network.Conn ( connNew
                                , ConnConf(..)
                                , ConnType(..)
                                , connStEnd
+                               , connDummy
                                ) where
 
 import SHLUG.Seia.Type
@@ -140,6 +141,9 @@ data Conn = MkConn { _conn_tx_cb :: ByteString -> JSM ()
                    -- and src is _conn_dst
                    , _conn_rtc_rx_cb :: (Word64, RTCMsg) -> JSM ()
                    }
+
+connDummy :: Conn
+connDummy = MkConn (const (return ())) (const (return ()))
 
 promiseH0 :: (MonadCatch m, DOM.MonadJSM m) => DOM.PromiseRejected -> m (Maybe a)
 promiseH0 e = do

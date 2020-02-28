@@ -236,7 +236,9 @@ connManNew c = do
                          }
                 -- should only create new Conn for MsgRTCReq
                 case rmsg of
-                  MkRTCReq _ -> do conn <- connNew cc
+                  MkRTCReq _ -> do liftIO $ stT (src, Left connDummy)
+                                   -- ^ avoid race condition
+                                   conn <- connNew cc
                                    liftIO $ stT (src, Left conn)
                                    liftJSM $ (_conn_rtc_rx_cb conn)
                                              (_msg_epoch msg, rmsg)
@@ -301,6 +303,8 @@ connManNew c = do
       let dst = fromJust dst'
       let on_conn_st x = liftIO $ stT (dst, Right x)
       ts <- _conf_turn_server <$> sample (_conf c)
+      -- avoid race condition
+      liftIO $ stT (dst, Left connDummy)
       conn <- connNew MkConnConf { _conn_remote = dst
                                  , _conn_local = nid
                                  , _conn_main_ver = main_ver
