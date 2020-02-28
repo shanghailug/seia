@@ -137,7 +137,8 @@ connManNew c = do
   rconf <- liftJSM rtConf
   let main_ver = fst $ _rt_main_version rconf
 
-  mqtt <- mqttNew $ MkMQTTConf { _mqtt_url = T.pack "wss://test.mosquitto.org:8081"
+  --"wss://test.mosquitto.org:8081"
+  mqtt <- mqttNew $ MkMQTTConf { _mqtt_url = _rt_mqtt_server rconf
                                , _mqtt_nid = nid
                                , _mqtt_tx = mqtt_txE
                                }

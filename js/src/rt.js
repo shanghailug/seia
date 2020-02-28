@@ -24,15 +24,14 @@ if (typeof(window._rt.conf) != 'object') {
 }
 
 // default turn server & bootstrap node
-if (!window._rt.conf.turn_server) {
-    window._rt.conf.turn_server = [
-        "stun:stun.stunprotocol.org"
-    ];
-}
+window._rt.conf.turn_server = window._rt.conf.turn_server || [
+    "stun:stun.stunprotocol.org"
+];
 
-if (!window._rt.conf.bootstrap_node) {
-    window._rt.conf.bootstrap_node = [
-        "9dp3gc3r7gngw3xhcs69bwyj3xaa75zodx5huw7rksyjs8in9qyy:0",
-        "d531szhkbbjbd6q716mraz8qamji8akyyu17up8gbe731qtiw66y:0"
-    ];
-}
+window._rt.conf.bootstrap_node = window._rt.conf.bootstrap_node || [
+    "9dp3gc3r7gngw3xhcs69bwyj3xaa75zodx5huw7rksyjs8in9qyy:0",
+    "d531szhkbbjbd6q716mraz8qamji8akyyu17up8gbe731qtiw66y:0"
+];
+
+window._rt.conf.mqtt_server = window._rt.conf.mqtt_server ||
+    "wss://mqtt.eclipse.org/mqtt";

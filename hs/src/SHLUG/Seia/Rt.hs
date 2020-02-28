@@ -225,6 +225,7 @@ data RtConf = RtConf
             -- from windw._rt.conf
             , _rt_conf_turn_server :: [Text]
             , _rt_conf_fallback_bootstrap_node :: [NID]
+            , _rt_mqtt_server :: Text
             } deriving (Eq, Show)
 
 rtConf :: JSM RtConf
@@ -242,6 +243,9 @@ rtConf = do
 
   let bn = map read bn1
 
+  mqtt_server' <- jsg "_rt" ^. js "conf" ^. js "mqtt_server"
+  mqtt_server <- fromMaybe T.empty <$> fromJSVal mqtt_server'
+
   --turn_server_list <- jsg "window" ^. js "_rt" ^. js "conf" ^. js "turn_server_list
   return $ RtConf { _rt_is_nodejs = is_nodejs
                   , _rt_sid = if sid' < 0 then Nothing else Just (toEnum sid')
@@ -251,4 +255,5 @@ rtConf = do
                   --
                   , _rt_conf_turn_server = ts
                   , _rt_conf_fallback_bootstrap_node = bn
+                  , _rt_mqtt_server = mqtt_server
                   }
