@@ -270,7 +270,7 @@ routeSetup nid sign mqtt_txT mqtt_stateD stE stD rxMsgE = do
                       (take 7 $ show rid)
                       (take 7 $ show (_msg_src ogm))
 
-      -- update route event
+      -- update route event, and will filter duplicated message
       liftIO $ rtblT (rid, _msg_src ogm, _msg_epoch ogm)
       let newRecord = case Map.lookup src rtbl of
                       Nothing -> True

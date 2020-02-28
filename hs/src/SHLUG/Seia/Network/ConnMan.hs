@@ -234,8 +234,7 @@ connManNew c = do
 
   let rxPreE' = attachWithMaybe (\(set, _) (rid, msg, raw) ->
                 case msg of
-                MsgEnvelopedSignal { _msg_sign = sig } ->
-                  if Set.member sig set then Nothing else Just (rid, msg, raw)
+                -- only filter signed message, enveloped message should special hanale
                 MsgSigned { _msg_sign = sig } ->
                   if Set.member sig set then Nothing else Just (rid, msg, raw)
                 _ -> Just (rid, msg, raw)
