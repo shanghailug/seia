@@ -10,7 +10,7 @@ pkgs: self: super:
   co-log = pkgs.haskell.lib.dontCheck super.co-log;
   co-log-core = pkgs.haskell.lib.dontCheck super.co-log-core;
   chronos = pkgs.haskell.lib.dontCheck (self.callPackage ./chronos.nix {});
-  typerep-map = pkgs.haskell.lib.dontCheck super.typerep-map;
+  typerep-map = pkgs.haskell.lib.dontCheck (self.callPackage ./typerep-map_0_3_2.nix {});
 
   # test actually fail, but in rare cast, use anyway
   unicode-show = pkgs.haskell.lib.dontCheck super.unicode-show;

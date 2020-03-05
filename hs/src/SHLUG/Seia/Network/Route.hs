@@ -2,6 +2,8 @@
 {-# language BlockArguments #-}
 {-# language FlexibleContexts #-}
 {-# language DeriveGeneric, DeriveDataTypeable #-}
+{-# language PatternSynonyms #-}
+{-# language OverloadedStrings #-}
 
 module SHLUG.Seia.Network.Route ( RouteEntry(..)
                                 , routeSetup
@@ -19,6 +21,7 @@ import SHLUG.Seia.Network.MQTT
 import SHLUG.Seia.Conf
 import SHLUG.Seia.Rt
 import SHLUG.Seia.Helper
+import SHLUG.Seia.Log
 
 import GHC.Generics
 
@@ -51,6 +54,7 @@ import Data.Maybe (isJust, fromJust)
 
 import Text.Printf
 import qualified System.IO as IO
+
 
 import Reflex
 import Language.Javascript.JSaddle ( JSM(..), MonadJSM(..)
@@ -125,6 +129,7 @@ routeSetup :: ( Reflex t
               , MonadHold t (Performable m)
               , MonadJSM (Performable m)
               , PostBuild t m
+              , WithLogIO m
               ) =>
               NID -> (ByteString -> ByteString) ->
               ((NID, ByteString) -> IO ()) ->
@@ -148,7 +153,7 @@ routeSetup nid sign mqtt_txT mqtt_stateD stE stD rxMsgE = do
   -- ensure msg is Signed Message
   let route msg raw = do
         let dst = _msg_dst msg
-        liftIO $ printf "  route msg to %s\n" (show dst)
+        logIOM D $ T.pack $ printf "route msg to %s" (sss 8 dst)
 
         rtbl <- sample rtblB
         mqttSt <- sample $ current mqtt_stateD
@@ -164,14 +169,14 @@ routeSetup nid sign mqtt_txT mqtt_stateD stE stD rxMsgE = do
         if isJust conn'
         then do
           let (n, conn) = fromJust conn'
-          liftIO $ printf "    route exist, via %s\n" (show n)
+          logIOM D $ T.pack $ printf "route exist, via %s" (sss 8 n)
           liftJSM $ (_conn_tx_cb conn) raw
         else if (mqttSt == MQTTOnline) && msgIsRTC
              then do
-               liftIO $ printf "    MQTT is online, route RTC message via MQTT\n"
+               logIOM D "MQTT is online, route RTC message via MQTT"
                liftIO $ mqtt_txT (dst, raw)
              else do
-               liftIO $ printf "    no route, can not relay via MQTT, drop\n"
+               logIOM W "no route, can not relay via MQTT, drop"
 
         return ()
 
@@ -225,7 +230,7 @@ routeSetup nid sign mqtt_txT mqtt_stateD stE stD rxMsgE = do
 
   performEvent_ $ ffor timeoutNodeE $ \n -> do
     liftIO $ mapM_ (\x -> rtblT (x, x, 1)) n
-    liftIO $ printf "  timeout node: %s\n" (show n)
+    logIOM W $ T.pack $ printf "timeout node: %s" (sss 8 n)
 
   -- TODO, need save recent msg, routead msg will drop
 
@@ -266,9 +271,8 @@ routeSetup nid sign mqtt_txT mqtt_stateD stE stD rxMsgE = do
       rtbl <- sample rtblB
 
 
-      liftIO $ printf "  OGM from %s ..., src %s ...\n"
-                      (take 7 $ show rid)
-                      (take 7 $ show (_msg_src ogm))
+      logIOM D $ T.pack $ printf "OGM from %s ..., src %s ..."
+                              (sss 8 rid) (sss 8 (_msg_src ogm))
 
       -- update route event, and will filter duplicated message
       liftIO $ rtblT (rid, _msg_src ogm, _msg_epoch ogm)

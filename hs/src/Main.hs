@@ -6,6 +6,15 @@
 {-# Language RecursiveDo  #-}
 {-# language OverloadedStrings #-}
 
+{-# language PatternSynonyms,
+             TypeSynonymInstances,
+             FlexibleInstances,
+             MultiParamTypeClasses,
+             InstanceSigs,
+             GeneralizedNewtypeDeriving
+#-}
+
+
 module Main where
 import SHLUG.Seia.Conf
 import SHLUG.Seia.Rt
@@ -13,12 +22,12 @@ import SHLUG.Seia.Type
 import SHLUG.Seia.Network.MQTT
 import SHLUG.Seia.Msg
 import SHLUG.Seia.Network.ConnMan
+import SHLUG.Seia.Log
 
 import Text.Show.Unicode
 
 import Control.Concurrent (threadDelay, forkIO)
 
-import Crypto.ECC.Ed25519.Sign
 import qualified Data.ByteString.UTF8 as UTF8
 
 import Language.Javascript.JSaddle( askJSM
@@ -61,6 +70,8 @@ import Reflex.Dom.Core
 import Control.Lens
 import Control.Monad.Catch (MonadCatch, catch) -- JSM is MonadCatch
 
+import Control.Monad.IO.Class (MonadIO)
+
 app :: ( Reflex t
        , TriggerEvent t m
        , PerformEvent t m
@@ -71,16 +82,16 @@ app :: ( Reflex t
        , MonadJSM m
        , MonadFix m
        , PostBuild t m
+       , WithLogIO m
        ) => m ()
 app = do
-  liftIO $ putStrLn "start"
+  logIOM I "app start"
   rt_conf <- liftJSM rtConf
-  liftIO $ putStrLn $ "rt_conf = " ++ show rt_conf
+  logIOM I $ "rt_conf = " `T.append` (T.pack $ show rt_conf)
   conf <- confB never never
   t <- sample conf
   let t' = t { _conf_priv_key = BS.empty }
-  liftIO $ putStrLn $ "conf = " ++ show t'
-
+  logIOM I $ "conf = " `T.append` (T.pack $ show t')
 
   --mqttLoopbackTest
   let tx = never
@@ -90,12 +101,12 @@ app = do
                                       }
 
   performEvent_ $ ffor (updated $ _conn_man_mqtt_state connMan) $ \ev ->
-    liftIO $ putStrLn $ "mqtt state: " ++ show ev
+    logIOM D $ "mqtt state: " `T.append` (T.pack $ show ev)
 
   return ()
 
 main :: IO ()
 main = do
-  mainWidget app
+  mainWidget $ withLogIO logEnvDefault app
   -- for nodejs, not quit
   liftIO $ forever $ threadDelay 5000000

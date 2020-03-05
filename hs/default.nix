@@ -1,5 +1,5 @@
 { mkDerivation, aeson, base, base32-z-bytestring, binary
-, bytestring, containers, eccrypto, exceptions, ghcjs-base
+, bytestring, co-log, containers, eccrypto, exceptions, ghcjs-base
 , ghcjs-dom, ghcjs-prim, jsaddle, lens, mtl, random, reflex
 , reflex-dom-core, stdenv, text, time, transformers, unicode-show
 , utf8-string
@@ -11,7 +11,7 @@ mkDerivation {
   isLibrary = false;
   isExecutable = true;
   executableHaskellDepends = [
-    aeson base base32-z-bytestring binary bytestring containers
+    aeson base base32-z-bytestring binary bytestring co-log containers
     eccrypto exceptions ghcjs-base ghcjs-dom ghcjs-prim jsaddle lens
     mtl random reflex reflex-dom-core text time transformers
     unicode-show utf8-string

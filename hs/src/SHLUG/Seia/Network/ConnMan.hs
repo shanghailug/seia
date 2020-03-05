@@ -3,6 +3,10 @@
 {-# language TupleSections #-}
 {-# language ScopedTypeVariables #-}
 
+{-# language PatternSynonyms #-}
+{-# language OverloadedStrings #-}
+
+
 module SHLUG.Seia.Network.ConnMan ( connManNew
                                   , ConnMan(..)
                                   , ConnManConf(..)
@@ -18,6 +22,7 @@ import SHLUG.Seia.Network.MQTT
 import SHLUG.Seia.Conf
 import SHLUG.Seia.Rt
 import SHLUG.Seia.Helper
+import SHLUG.Seia.Log
 
 import System.Random (randomRIO)
 
@@ -47,12 +52,14 @@ import Control.Monad.IO.Class (MonadIO(..), liftIO)
 import Control.Monad (when, forever)
 import Control.Concurrent (threadDelay, forkIO)
 
-import Control.Monad.Trans.Maybe (runMaybeT, MaybeT(..))
+import Control.Monad.Trans.Except (runExceptT, except)
 import Control.Monad.State (runState, put, get, modify)
 
 import Control.Monad.Fix (MonadFix(..))
+import Control.Monad.Reader (ask)
 
 import Data.Maybe (isJust, fromJust)
+import Data.Either (isRight, fromRight)
 
 import Text.Printf
 import qualified System.IO as IO
@@ -134,6 +141,7 @@ connManNew :: ( Reflex t
               , MonadHold t (Performable m)
               , MonadJSM (Performable m)
               , PostBuild t m
+              , WithLogIO m
               ) =>
               ConnManConf t -> m (ConnMan t)
 connManNew c = do
@@ -154,6 +162,9 @@ connManNew c = do
 
   let mqtt_rxE = _mqtt_rx mqtt
   let mqtt_stateD = _mqtt_state mqtt
+
+  logEnv <- ask
+  let logJSM = logIOM' logEnv
 
   ------------------------ event & behavior declare
 
@@ -241,7 +252,7 @@ connManNew c = do
                 ) oldMsg_B rxPreE
 
   performEvent_ $ ffor rxPreE' $ \(rid, msg, raw) -> do
-    liftIO $ printf "    process rxPre: %s\n" (sss 50 msg)
+    logIOM D $ T.pack $ printf "process rxPre: %s" (sss 50 msg)
     connStMap <- sample $ current stD
     ts <- _conf_turn_server <$> sample (_conf c)
     rtbl <- sample rtblB
@@ -274,7 +285,7 @@ connManNew c = do
                 case Map.lookup src m of
                   Just conn -> liftJSM $ (_conn_rtc_rx_cb conn)
                                          (_msg_epoch msg, rmsg)
-                  Nothing -> do liftIO $ printf "rtc msg dst not exist, drop\n"
+                  Nothing -> do logIOM W $ "rtc msg dst not exist, drop"
                                 return ()
 
         else do let on_conn_st st = liftIO $ stT (src, Right st)
@@ -293,7 +304,7 @@ connManNew c = do
                 case rmsg of
                   MkRTCReq _ -> do liftIO $ stT (src, Left connDummy)
                                    -- ^ avoid race condition
-                                   conn <- connNew cc
+                                   conn <- connNew cc logJSM
                                    liftIO $ stT (src, Left conn)
                                    liftJSM $ (_conn_rtc_rx_cb conn)
                                              (_msg_epoch msg, rmsg)
@@ -321,7 +332,7 @@ connManNew c = do
   ----------------- tick
   tick1 <- liftIO getCurrentTime >>= tickLossy 1
   performEvent_ $ ffor tick1  $ \_ -> do
-    --liftIO $ printf "======= tick =======\n"
+    logIOM D $ T.pack $ printf "-----------> tick"
     liftIO $ IO.hFlush IO.stdout
 
   -- automake conn check
@@ -332,30 +343,28 @@ connManNew c = do
     mqtt_state <- sample $ current mqtt_stateD
     rtbl <- sample rtblB
 
-    dst' <- runMaybeT $ do
+    dst' <- runExceptT $ do
       let ff x = (x /= nid) &&
                  (Map.notMember x st)
 
       let nl' = filter ff nl
 
       when (length nl' == 0) $ do
-        --liftIO $ putStrLn "  not enough bootstrap candidate"
-        fail "not enough bootstrap candidate"
+        except (Left "not enough bootstrap candidate")
 
       idx <- liftIO $ randomRIO (0, length nl' - 1)
       let dst = nl' !! idx -- TODO
       when ((mqtt_state /= MQTTOnline) &&
-            (not $ Map.member dst rtbl)) $ do
-                 liftIO $ putStrLn "mqtt offline or not routable, skip"
-                 fail "mqtt offline or not routable"
-
-      liftIO $ printf "try to connect to %s\n" (show dst)
+            (not $ Map.member dst rtbl)) $
+                 except (Left "mqtt offline or not routable, skip")
 
       return dst
 
-
-    when (isJust dst') $ do
-      let dst = fromJust dst'
+    case dst' of
+     Left msg -> logIOM W msg
+     Right dst -> do
+      logIOM I $ T.pack $ printf "try to connect to %s" (show dst)
+      let dst = fromRight nid0 dst'
       let on_conn_st x = liftIO $ stT (dst, Right x)
       ts <- _conf_turn_server <$> sample (_conf c)
       -- avoid race condition
@@ -369,24 +378,24 @@ connManNew c = do
                                  , _conn_turn_server = ts
                                  , _conn_msg_sign = conn_msg_sign
                                  , _conn_nid_exist = False -- always F for client
-                                 }
+                                 } logJSM
       liftIO $ stT (dst, Left conn)
 
     return ()
   ---------------------- trace stE change
   performEvent_ $ ffor stE $ \(n, x) ->
     let str = case x of { Left _ -> "NEW"; Right st -> show st } in
-    liftIO $ printf "node %s: %s\n" (show n) str
+    logIOM D $ T.pack $ printf "node %s: %s" (show n) str
 
   performEvent_ $ ffor (updated stD) $ \st -> do
-    liftIO $ printf "st -> %s\n" (show $ Map.map snd st)
+    logIOM D $ T.pack $ printf "st -> %s" (show $ Map.map snd st)
 
   tick30 <- liftIO getCurrentTime >>= tickLossy 30
   performEvent_ $ ffor tick30 $ \_ -> do
     st <- sample $ current stD
-    liftIO $ printf "st -> %s\n" (show $ Map.map snd st)
+    logIOM D $ T.pack $ printf "st -> %s" (show $ Map.map snd st)
     rtbl <- sample rtblB
-    liftIO $ printf "rtbl -> %s\n" (show rtbl)
+    logIOM D $ T.pack $ printf "rtbl -> %s" (show rtbl)
 
   ----- output
   let st_d = Map.map snd <$> stD

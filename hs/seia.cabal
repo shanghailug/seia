@@ -30,7 +30,7 @@ executable seia
                        ghcjs-prim, ghcjs-base,
                        reflex, reflex-dom-core,
                        utf8-string, unicode-show, base32-z-bytestring,
-                       binary, random
+                       binary, random, co-log
 
   hs-source-dirs:      src
   js-sources:   jsbits/sha512.js
