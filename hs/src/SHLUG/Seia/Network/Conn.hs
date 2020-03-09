@@ -1,6 +1,7 @@
 {-# language FlexibleContexts #-}
 {-# language BlockArguments #-}
 {-# language DeriveGeneric #-}
+{-# language TupleSections #-}
 
 module SHLUG.Seia.Network.Conn ( connNew
                                , ConnState(..)
@@ -166,7 +167,7 @@ exceptionH0' verbose e = do
   when (verbose) $ DOM.liftJSM $ consoleLog ("js exception", show e)
   return Nothing
 
-exceptionH0 = exceptionH0' False
+--exceptionH0 = exceptionH0' False
 
 peerConnCfg :: [Text] -> JSM JSVal
 peerConnCfg ts = do
@@ -301,9 +302,9 @@ onRTCRx c logJSM stRef pcRef dcRef tsRef (epoch, msg) = do
   return ()
 
 
-procMsg :: ConnConf -> LogJSM -> UTCTime ->
-           IORef Int64 -> ByteString -> JSM ()
-procMsg c logJSM t0 tsRef payload = do
+procMsg :: ConnConf -> LogJSM -> JSVal -> DOM.RTCDataChannel -> UTCTime ->
+           IORef Int64 -> IORef Int64 -> ByteString -> JSM ()
+procMsg c logJSM pkt dc t0 tsRef hbRef payload = do
   -- update timestamp
   liftIO $ getEpochMs >>= atomicWriteIORef tsRef
   case decodeOrFail (fromStrict payload) of
@@ -312,12 +313,20 @@ procMsg c logJSM t0 tsRef payload = do
        -- heart beat
        Right (_, _, MsgHeartbeat) -> do
              t <- liftIO getCurrentTime
+             ms <- liftIO getEpochMs
+             ms0 <- liftIO $ atomicModifyIORef' hbRef (ms,)
+
              let dt = diffUTCTime t t0
              when (floor (dt*2) `mod` 120 == 0) $
                   logJSM D $ T.pack $ printf "----> uptime %s : %s\n"
                                              (sss 8 (_conn_remote c)) (show dt)
-             logJSM D $ T.pack $ printf "----> %s: %s, up %s"
-                                        (sss 8 $ _conn_remote c) (show t) (show dt)
+             when (ms0 > 0) $
+                  logJSM D $ T.pack $ printf "----> %s: rtt %d ms"
+                                             (sss 8 $ _conn_remote c)
+                                             (ms - ms0 - 1000)
+             liftIO $ forkIO $ threadDelay (500 * 1000) >>
+                               sendJSVal pkt dc
+             return ()
 
        Right (_, _, msg) -> do
              when (msgVerify payload) do
@@ -330,6 +339,7 @@ heartbeatChecker :: JSVal -> ConnConf ->
                     IORef (Maybe DOM.RTCPeerConnection) ->
                     IORef Int64 -> DOM.RTCDataChannel -> JSM ()
 heartbeatChecker pkt c logJSM stRef pcRef tsRef dc = do
+  {-
   -- send heart beat,
   -- NOTE, current data channel might not in 'open' state,
   -- because remote might recv timeout and close channel
@@ -337,6 +347,7 @@ heartbeatChecker pkt c logJSM stRef pcRef tsRef dc = do
         (fmap (const ()) . exceptionH0' True)
 
   logJSM D $ T.pack $ printf "<---- %s" (sss 8 $ _conn_remote c)
+  -}
 
   -- delay 500
   liftIO $ threadDelay $ 500 * 1000
@@ -348,6 +359,17 @@ heartbeatChecker pkt c logJSM stRef pcRef tsRef dc = do
   then updateSt c stRef pcRef ConnTimeout
   else heartbeatChecker pkt c logJSM stRef pcRef tsRef dc
 
+sendJSVal :: JSVal -> DOM.RTCDataChannel -> JSM ()
+sendJSVal pkt dc = do
+  catch (RTCDataChannel.sendView dc (DOM.ArrayBufferView pkt))
+        (fmap (const ()) . exceptionH0' True)
+
+heartbeatPkt :: JSM JSVal
+heartbeatPkt = do
+  let bs = toStrict $ encode $ MsgHeartbeat
+  u8a <- bs_to_u8a bs
+  u8a_to_jsval u8a
+
 setupDataChannel :: ConnConf ->
                     LogJSM ->
                     IORef ConnState ->
@@ -358,6 +380,8 @@ setupDataChannel :: ConnConf ->
 setupDataChannel c logJSM stRef pcRef dcRef tsRef dc = do
   let nid = _conn_remote c
   t0 <- liftIO getCurrentTime
+  pkt <- heartbeatPkt
+  hbRef <- newIORef 0
 
   DOM.on dc RTCDataChannel.open $ do
     liftJSM $ updateSt c stRef pcRef (ConnReady (_conn_type c))
@@ -366,10 +390,11 @@ setupDataChannel c logJSM stRef pcRef dcRef tsRef dc = do
     liftJSM $ logJSM I $ T.pack $ printf "%s: data channel open" (show nid)
     ctx <- askJSM
 
-    let bs = toStrict $ encode $ MsgHeartbeat
-    pkt <- liftJSM $ bs_to_u8a bs >>= u8a_to_jsval
-
-    liftIO $ forkIO $ runJSM (heartbeatChecker pkt c logJSM stRef pcRef tsRef dc) ctx
+    liftIO $ forkIO $ runJSM (heartbeatChecker pkt c logJSM
+                                               stRef pcRef tsRef dc
+                             ) ctx
+    -- start send heartbeat from client
+    when (_conn_type c == ConnIsClient) $ liftJSM $ sendJSVal pkt dc
     return ()
 
   DOM.on dc RTCDataChannel.message $ do
@@ -378,7 +403,7 @@ setupDataChannel c logJSM stRef pcRef dcRef tsRef dc = do
 
     bs' <- liftJSM $ jsval_to_bs dat
     case bs' of
-      Just bs -> liftJSM $ procMsg c logJSM t0 tsRef bs
+      Just bs -> liftJSM $ procMsg c logJSM pkt dc t0 tsRef hbRef bs
       Nothing -> do
         liftJSM $ logJSM W $ T.pack $
                   printf "%s: recv msg is not u8a/ab, drop" (show nid)
@@ -407,8 +432,7 @@ onTx c logJSM dcRef payload = do
 
     -- not check dc state, just catch any exception
     v <- liftJSM $ u8a_to_jsval u8a
-    liftJSM $ catch (RTCDataChannel.sendView dc (DOM.ArrayBufferView v))
-                    (fmap (const ()) . exceptionH0)
+    liftJSM $ sendJSVal v dc
 
   when (res == Nothing) $
     logJSM W $ T.pack $ printf "%s: tx msg drop, dc is not exist or not open"
