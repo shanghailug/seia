@@ -361,7 +361,7 @@ connManNew c = do
       return dst
 
     case dst' of
-     Left msg -> logIOM W msg
+     Left msg -> logIOM D msg
      Right dst -> do
       logIOM I $ T.pack $ printf "try to connect to %s" (show dst)
       let dst = fromRight nid0 dst'
@@ -385,7 +385,7 @@ connManNew c = do
   ---------------------- trace stE change
   performEvent_ $ ffor stE $ \(n, x) ->
     let str = case x of { Left _ -> "NEW"; Right st -> show st } in
-    logIOM D $ T.pack $ printf "node %s: %s" (show n) str
+    logIOM I $ T.pack $ printf "node %s: %s" (show n) str
 
   performEvent_ $ ffor (updated stD) $ \st -> do
     logIOM D $ T.pack $ printf "st -> %s" (show $ Map.map snd st)
