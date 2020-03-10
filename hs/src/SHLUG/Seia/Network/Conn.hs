@@ -267,37 +267,41 @@ onRTCRx :: ConnConf ->
            (Word64, RTCMsg) -> JSM ()
 onRTCRx c logJSM stRef pcRef dcRef tsRef (epoch, msg) = do
   logJSM D $ T.pack $ printf "on rtc rx: %s" (sss 50 msg)
-
+  let tp = _conn_type c
   pc' <- liftIO $ readIORef pcRef
-  case msg of
-    MkRTCReq ver ->
+  case (msg, tp) of
+    (MkRTCReq ver, ConnIsServer) ->
       if ver /= _conn_main_ver c
       then do updateSt c stRef pcRef ConnFail
               sendRTCMsg c (MkRTCRes RTCMsgResIncompatiable)
       else do updateSt c stRef pcRef ConnSignal
               sendRTCMsg c (MkRTCRes if _conn_nid_exist c
                                      then RTCMsgResExist else RTCMsgResOK)
-    MkRTCRes res ->
+    (MkRTCRes res, ConnIsClient) ->
       if res == RTCMsgResIncompatiable -- TODO, check ResExist
       then do updateSt c stRef pcRef ConnFail
               logJSM W $ T.pack $ "rtc req fail: " ++ show res
       else do updateSt c stRef pcRef ConnSignal
               createConnection c logJSM stRef pcRef dcRef tsRef Nothing
-    MkRTCSignal tp str ->
+
+    (MkRTCSignal tp str, _) ->
       do --- NOTE, wrtc will throw exception for null, "", {}
          jv <- jsg "JSON" ^. js1 "parse" str
          when (str == T.pack "null") $ consoleLog jv
 
-         case (tp, pc') of
-           (RTCOffer,  _) -> createConnection c logJSM stRef pcRef dcRef tsRef (Just jv)
-           (RTCAnswer, Just pc) ->
+         case (tp, pc', _conn_type c) of
+           (RTCOffer,  _, ConnIsServer) ->
+             createConnection c logJSM stRef pcRef dcRef tsRef (Just jv)
+           (RTCAnswer, Just pc, ConnIsClient) ->
              catch (DOM.setRemoteDescription pc (DOM.RTCSessionDescriptionInit jv))
                    (fmap (const ()) . promiseH0)
-           (RTCCandidate, Just pc) ->
+           (RTCCandidate, Just pc, _) ->
              catch (DOM.addIceCandidate pc (DOM.RTCIceCandidate jv))
                    (fmap (const ()) . promiseH0)
-           _ -> do logJSM W $ T.pack $ "pc is not exist for " ++ show tp
+           _ -> do logJSM W $ T.pack $ "pc is not exist or connection type incorrect"
                    updateSt c stRef pcRef ConnFail
+
+    _ -> logJSM W $ T.pack "wrong type of message"
 
   return ()
 
