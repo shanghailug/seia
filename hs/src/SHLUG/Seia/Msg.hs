@@ -1,5 +1,6 @@
 {-# language DeriveGeneric, DeriveDataTypeable #-}
 {-# language DuplicateRecordFields #-}
+{-# language ForeignFunctionInterface, JavaScriptFFI #-}
 
 module SHLUG.Seia.Msg
   ( Msg(..)
@@ -13,6 +14,7 @@ module SHLUG.Seia.Msg
 
 import SHLUG.Seia.Type
 import SHLUG.Seia.Helper
+import SHLUG.Seia.Rt(u8a_to_bs, bs_to_u8a, u8a_to_jsval, consoleLog)
 
 import SHLUG.Seia.Msg.Envelope
 import SHLUG.Seia.Msg.Payload
@@ -40,6 +42,54 @@ import Data.Maybe (fromMaybe)
 import Crypto.ECC.Ed25519.Sign (dverify, dsign)
 import Crypto.ECC.Ed25519.Internal.Ed25519(SecKey(..))
 
+import JavaScript.TypedArray ( TypedArray(..)
+                             , Uint8Array
+                             )
+import Language.Javascript.JSaddle ( JSM(..))
+import Control.Monad.IO.Class (liftIO)
+import System.IO.Unsafe(unsafePerformIO)
+
+foreign import javascript unsafe "window.nacl.sign.detached($1, $2)"
+  js_nacl_dsign :: Uint8Array -> Uint8Array -> IO Uint8Array
+
+foreign import javascript unsafe "window.nacl.sign.detached.verify($1, $2, $3)"
+  js_nacl_dverify :: Uint8Array -> Uint8Array -> Uint8Array -> IO Bool
+
+foreign import javascript unsafe "window.nacl.sign.keyPair.fromSeed($1).secretKey"
+  js_nacl_gensk :: Uint8Array -> IO Uint8Array
+
+sign :: ByteString -> ByteString -> ByteString
+sign = sign2
+
+sign1 sk dat = unsafePerformIO $ do
+  sk' <- bs_to_u8a sk
+  dat' <- bs_to_u8a dat
+
+  -- NOTE: this step may move to confB,
+  -- but will not save too much cpu time
+  sk1 <- js_nacl_gensk sk'
+
+  res <- liftIO $ js_nacl_dsign dat' sk1
+  u8a_to_bs res
+
+sign2 sk dat = let Right res = dsign (SecKeyBytes sk) dat in res
+
+
+verify :: ByteString -> ByteString -> ByteString -> Bool
+verify = verify2
+
+verify1 pk sig dat = unsafePerformIO $ do
+  dat' <- bs_to_u8a dat
+  sig' <- bs_to_u8a sig
+  pk' <- bs_to_u8a pk
+  liftIO $ js_nacl_dverify dat' sig' pk'
+
+verify2 pk sig dat =
+  case dverify pk sig dat of
+       Right _ -> True
+       Left  _ -> False
+
+
 --import Test.QuickCheck
 tpHeartbeart :: Word8
 tpHeartbeart = 1
@@ -66,7 +116,6 @@ data Msg = MsgHeartbeat | -- '\1'
                      , _msg_sign    :: !ByteString
                      }
            deriving (Eq, Show, Typeable, Data)
-
 msgVerify :: ByteString -> Bool
 msgVerify x = let
   tp = BS.head x
@@ -90,24 +139,23 @@ msgVerify x = let
   in
   case res' of
     Right x  -> x
-    Left (UID pk, dat, sig) ->
-         case dverify pk sig dat of
-         Right _ -> True
-         Left  _ -> False
+    Left (UID pk, dat, sig) -> verify pk sig dat
+
+--msgVerify = const True
 
 msgSign :: ByteString -> ByteString -> ByteString
 msgSign sk s = let
   tp = BS.head s
-  key = SecKeyBytes sk
   sign1 = let s1 = BS.take (1 + 34 + 8) s
               s2 = BS.drop (1 + 34 + 8 + 64) s
-              Right s3 = dsign key s1
+              s3 = sign sk s1
           in s1 <> s3 <> s2
   sign2 = let s1 = BS.take (BS.length s - 64) s
-              Right s2 = dsign key s1
+              s2 = sign sk s1
           in s1 <> s2
   in fromMaybe s $ L.lookup tp [ (tpEnvelopedSignal, sign1)
                                , (tpSigned, sign2)]
+--msgSign sk s = s
 
 emptySign = BS.replicate 64 0
 
@@ -178,7 +226,7 @@ msgT1 sk m = do
   putStrLn $ "m = " ++ show m
   let b1 = toStrict $ encode m
   putStrLn $ "enc = " ++ show b1
-  putStrLn $ "vfy = " ++ show (msgVerify b1)
+  putStrLn $ "vfy(F) = " ++ show (msgVerify b1)
   let b2 = msgSign sk b1
   putStrLn $ "sgn = " ++ show b2
   putStrLn $ "vfy = " ++ show (msgVerify b2)

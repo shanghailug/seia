@@ -1021,6 +1021,15 @@ let
         sha1 = "1865f43d9e74b0822db9f145b78cff7d0f7c849b";
       };
     };
+    "tweetnacl-1.0.3" = {
+      name = "tweetnacl";
+      packageName = "tweetnacl";
+      version = "1.0.3";
+      src = fetchurl {
+        url = "https://registry.npmjs.org/tweetnacl/-/tweetnacl-1.0.3.tgz";
+        sha512 = "6rt+RN7aOi1nGMyC4Xa5DdYiukl2UWCbcJft7YhxReBGQD7OAM8Pbxw6YMo4r2diNEA8FEmu32YOn9rhaiE5yw==";
+      };
+    };
     "type-1.2.0" = {
       name = "type";
       packageName = "type";
@@ -1315,6 +1324,7 @@ let
       sources."through2-2.0.5"
       sources."through2-filter-3.0.0"
       sources."to-absolute-glob-2.0.2"
+      sources."tweetnacl-1.0.3"
       sources."type-1.2.0"
       sources."typedarray-0.0.6"
       sources."ultron-1.1.1"

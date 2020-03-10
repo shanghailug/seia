@@ -2,6 +2,7 @@
 require('./rt');
 
 var loader = require('./loader');
+window.nacl = require('tweetnacl');
 
 var rt = window._rt;
 

@@ -12,6 +12,7 @@
   "dependencies": {
     "fast-text-encoding": "^1.0.0",
     "mqtt": "^3.0.0",
+    "tweetnacl": "^1.0.3",
     "wrtc": "^0.4.3",
     "xhr2": "^0.2.0"
   }
