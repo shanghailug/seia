@@ -90,6 +90,7 @@ clientNew nid url stT rxT = do
   -- reconnect
   cli ^. js2 "on" "reconnect"
              (fun $ \_ _ _ -> liftIO $ stT MQTTConnecting)
+  -- TODO: some times, send msg is ok, but can not recv msg
   -- message
   cli ^. js2 "on" "message" (fun $ \_ _ (_ : m : _) -> do
          --consoleLog "message"
