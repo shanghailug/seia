@@ -72,6 +72,9 @@ import Control.Monad.Catch (MonadCatch, catch) -- JSM is MonadCatch
 
 import Control.Monad.IO.Class (MonadIO)
 
+import Colog(richMessageAction, Msg(..))
+import Colog.Core.Action(cfilter)
+
 app :: ( Reflex t
        , TriggerEvent t m
        , PerformEvent t m
@@ -93,6 +96,7 @@ app = do
   let t' = t { _conf_priv_key = BS.empty }
   logIOM I $ "conf = " `T.append` (T.pack $ show t')
 
+  liftIO $ msgTrivalTest (_conf_nid t) (_conf_priv_key t)
   --mqttLoopbackTest
   let tx = never
   connMan <- connManNew MkConnManConf { _conn_man_tx = tx
@@ -107,6 +111,11 @@ app = do
 
 main :: IO ()
 main = do
-  mainWidget $ withLogIO logEnvDefault app
+  let logEnv1 = logEnvDefault
+  let logEnv2 = MkLogEnv $ cfilter (\case Msg { msgSeverity = I }-> True
+                                          _ -> False
+                                   ) richMessageAction
+  let logEnv = if True then logEnv1 else logEnv2
+  mainWidget $ withLogIO logEnv1 app
   -- for nodejs, not quit
   liftIO $ forever $ threadDelay 5000000
