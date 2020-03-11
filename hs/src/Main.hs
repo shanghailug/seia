@@ -89,6 +89,9 @@ app :: ( Reflex t
        ) => m ()
 app = do
   logIOM I "app start"
+
+  liftIO $ js_nacl_wasm_wait_ready
+
   rt_conf <- liftJSM rtConf
   logIOM I $ "rt_conf = " `T.append` (T.pack $ show rt_conf)
   conf <- confB never never

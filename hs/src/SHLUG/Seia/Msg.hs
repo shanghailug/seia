@@ -10,6 +10,7 @@ module SHLUG.Seia.Msg
   , emptySign
   , msgTrivalTest
   , msgFillEpoch
+  , js_nacl_wasm_wait_ready
   ) where
 
 import SHLUG.Seia.Type
@@ -49,17 +50,27 @@ import Language.Javascript.JSaddle ( JSM(..))
 import Control.Monad.IO.Class (liftIO)
 import System.IO.Unsafe(unsafePerformIO)
 
-foreign import javascript unsafe "window.nacl.sign.detached($1, $2)"
+foreign import javascript unsafe "window._rt.nacl.sign.detached($1, $2)"
   js_nacl_dsign :: Uint8Array -> Uint8Array -> IO Uint8Array
 
-foreign import javascript unsafe "window.nacl.sign.detached.verify($1, $2, $3)"
+foreign import javascript unsafe "window._rt.nacl.sign.detached.verify($1, $2, $3)"
   js_nacl_dverify :: Uint8Array -> Uint8Array -> Uint8Array -> IO Bool
 
-foreign import javascript unsafe "window.nacl.sign.keyPair.fromSeed($1).secretKey"
+foreign import javascript unsafe "window._rt.nacl.sign.keyPair.fromSeed($1).secretKey"
   js_nacl_gensk :: Uint8Array -> IO Uint8Array
 
+foreign import javascript unsafe "window._rt.nacl_wasm.dsign($1, $2)"
+  js_nacl_wasm_dsign :: Uint8Array -> Uint8Array -> IO Uint8Array
+
+foreign import javascript unsafe "window._rt.nacl_wasm.dverify($1, $2, $3)"
+  js_nacl_wasm_dverify :: Uint8Array -> Uint8Array -> Uint8Array -> IO Bool
+
+foreign import javascript interruptible "window._rt.nacl_wasm.onready($c);"
+  js_nacl_wasm_wait_ready :: IO ()
+
+
 sign :: ByteString -> ByteString -> ByteString
-sign = sign2
+sign = sign3
 
 sign1 sk dat = unsafePerformIO $ do
   sk' <- bs_to_u8a sk
@@ -74,9 +85,19 @@ sign1 sk dat = unsafePerformIO $ do
 
 sign2 sk dat = let Right res = dsign (SecKeyBytes sk) dat in res
 
+sign3 sk dat = unsafePerformIO $ do
+  sk' <- bs_to_u8a sk
+  dat' <- bs_to_u8a dat
+
+  -- NOTE: this step may move to confB,
+  -- but will not save too much cpu time
+  sk1 <- js_nacl_gensk sk'
+
+  res <- liftIO $ js_nacl_wasm_dsign sk1 dat'
+  u8a_to_bs res
 
 verify :: ByteString -> ByteString -> ByteString -> Bool
-verify = verify2
+verify = verify3
 
 verify1 pk sig dat = unsafePerformIO $ do
   dat' <- bs_to_u8a dat
@@ -88,6 +109,12 @@ verify2 pk sig dat =
   case dverify pk sig dat of
        Right _ -> True
        Left  _ -> False
+
+verify3 pk sig dat = unsafePerformIO $ do
+  dat' <- bs_to_u8a dat
+  sig' <- bs_to_u8a sig
+  pk' <- bs_to_u8a pk
+  liftIO $ js_nacl_wasm_dverify pk' sig' dat'
 
 
 --import Test.QuickCheck

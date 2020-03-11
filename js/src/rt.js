@@ -14,6 +14,11 @@ if (typeof(window._rt) != 'object') {
 window._rt.VERSION = VERSION;  // this is RtConf._rt_conf_rt_version
 window._rt.is_nodejs = is_nodejs;
 
+// nacl
+window._rt.nacl = require('tweetnacl');
+//window._rt.nacl_wasm = require('./tweetnacl');
+
+
 // NOTE: mqtt is set inside ghcjs, or at external exec.js
 //window._rt.mqtt = require('mqtt');
 window._rt.store = require('./store');
