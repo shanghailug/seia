@@ -40,6 +40,7 @@ win._rt.cwd = process.cwd();
 win._rt.sid = 0; // TODO from args
 
 win._rt.nacl_wasm = require("./tweetnacl");
+win._rt.rust_crypto_ed25519 = require("./rust_crypto_ed25519");
 
 win._rt.mqtt = require("mqtt");
 

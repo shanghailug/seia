@@ -68,9 +68,14 @@ foreign import javascript unsafe "window._rt.nacl_wasm.dverify($1, $2, $3)"
 foreign import javascript interruptible "window._rt.nacl_wasm.onready($c);"
   js_nacl_wasm_wait_ready :: IO ()
 
+foreign import javascript unsafe "window._rt.rust_crypto_ed25519.sign($1,$2)"
+  js_rust_crypto_sign :: Uint8Array -> Uint8Array -> IO Uint8Array
+
+foreign import javascript unsafe "window._rt.rust_crypto_ed25519.verify($1,$2,$3)"
+  js_rust_crypto_verify :: Uint8Array -> Uint8Array -> Uint8Array -> IO Bool
 
 sign :: ByteString -> ByteString -> ByteString
-sign = sign3
+sign = sign4
 
 sign1 sk dat = unsafePerformIO $ do
   sk' <- bs_to_u8a sk
@@ -96,8 +101,20 @@ sign3 sk dat = unsafePerformIO $ do
   res <- liftIO $ js_nacl_wasm_dsign sk1 dat'
   u8a_to_bs res
 
+sign4 sk dat = unsafePerformIO $ do
+  sk' <- bs_to_u8a sk
+  dat' <- bs_to_u8a dat
+
+  -- NOTE: this step may move to confB,
+  -- but will not save too much cpu time
+  sk1 <- js_nacl_gensk sk'
+
+  res <- liftIO $ js_rust_crypto_sign dat' sk1
+  u8a_to_bs res
+
+
 verify :: ByteString -> ByteString -> ByteString -> Bool
-verify = verify3
+verify = verify4
 
 verify1 pk sig dat = unsafePerformIO $ do
   dat' <- bs_to_u8a dat
@@ -116,6 +133,11 @@ verify3 pk sig dat = unsafePerformIO $ do
   pk' <- bs_to_u8a pk
   liftIO $ js_nacl_wasm_dverify pk' sig' dat'
 
+verify4 pk sig dat = unsafePerformIO $ do
+  dat' <- bs_to_u8a dat
+  sig' <- bs_to_u8a sig
+  pk' <- bs_to_u8a pk
+  liftIO $ js_rust_crypto_verify dat' pk' sig'
 
 --import Test.QuickCheck
 tpHeartbeart :: Word8
