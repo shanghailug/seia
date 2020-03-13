@@ -67,6 +67,8 @@ import Data.Map (Map(..))
 import Reflex
 import Reflex.Dom.Core
 
+import Reflex.Host.Basic(basicHostForever)
+
 import Control.Lens
 import Control.Monad.Catch (MonadCatch, catch) -- JSM is MonadCatch
 
@@ -117,6 +119,12 @@ main = do
                                           _ -> False
                                    ) richMessageAction
   let logEnv = if True then logEnv1 else logEnv2
-  mainWidget $ withLogIO logEnv app
+
+  -- JSM is IO
+  x <- isNodeJS
+
+  if x
+  then basicHostForever $ withLogIO logEnv app
+  else mainWidget $ withLogIO logEnv app
   -- for nodejs, not quit
   liftIO $ forever $ threadDelay 5000000

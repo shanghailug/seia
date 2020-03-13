@@ -3,12 +3,12 @@ require('./rt');
 
 var loader = require('./loader');
 
-var rt = window._rt;
+var rt = _rt;
 
 function u8a_to_utf8(a)
 {
-    if (window.TextDecoder) {
-        var d = new window.TextDecoder();
+    if (typeof(TextDecoder) === "function") {
+        var d = new TextDecoder();
         return d.decode(a);
     }
     else {
@@ -17,11 +17,8 @@ function u8a_to_utf8(a)
     }
 }
 
-
-
-var url = document.location.href;
-if ((document.currentScript != null) &&
-    (document.currentScript.src != null)) {
+var url = _rt.href;
+if (!_rt.is_nodejs()) {
     url = document.currentScript.src;
 }
 

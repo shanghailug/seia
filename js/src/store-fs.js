@@ -1,7 +1,7 @@
 var path = require('path');
 
 function get_path(key) {
-    return path.join(window._rt.cwd, "store", key);
+    return path.join(_rt.cwd, "store", key);
 }
 
 // return Uint8Array

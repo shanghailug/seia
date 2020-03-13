@@ -50,13 +50,13 @@ import Language.Javascript.JSaddle ( JSM(..), ghcjsPure )
 import Control.Monad.IO.Class (liftIO)
 import System.IO.Unsafe(unsafePerformIO)
 
-foreign import javascript unsafe "window._rt.rust_crypto_ed25519.sign($1,$2)"
+foreign import javascript unsafe "_rt.rust_crypto_ed25519.sign($1,$2)"
   js_rust_crypto_sign :: Uint8Array -> Uint8Array -> IO Uint8Array
 
-foreign import javascript unsafe "window._rt.rust_crypto_ed25519.verify($1,$2,$3)"
+foreign import javascript unsafe "_rt.rust_crypto_ed25519.verify($1,$2,$3)"
   js_rust_crypto_verify :: Uint8Array -> Uint8Array -> Uint8Array -> IO Bool
 
-foreign import javascript unsafe "window._rt.rust_crypto_ed25519.keypair($1)"
+foreign import javascript unsafe "_rt.rust_crypto_ed25519.keypair($1)"
   js_rust_crypto_keypair :: Uint8Array -> IO Uint8Array
 
 sign :: ByteString -> ByteString -> ByteString

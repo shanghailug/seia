@@ -12,8 +12,8 @@ function get_key(ver) {
 }
 
 function load_xhr(url, cb) {
-    var ver = window._rt.VERSION;
-    var u = new window.URL(url);
+    var ver = _rt.VERSION;
+    var u = new _rt.URL(url);
 
     var p = u.pathname;
     p = p.replace(RegExp("/[^/]*$"),"");
@@ -36,7 +36,7 @@ function load_xhr(url, cb) {
     }
 
     // TODO, accept gzipped data
-    if ((typeof(window._rt.cwd) == "string") && (u.protocol == 'file:')) {
+    if ((typeof(_rt.cwd) == "string") && (u.protocol == 'file:')) {
         // NOTE: xhr2 not support 'file:', so fallback to fs.readFile
         p = u.pathname;
         fs.readFile(p, function(err, res) {
@@ -48,7 +48,7 @@ function load_xhr(url, cb) {
         // browser
         // NOTE:, for 'file:', firefox not accept CORS after firefox 67.
         // so, use 'python3 -m http.server' to run a trival http server for test.
-        var req = new window.XMLHttpRequest();
+        var req = new _rt.XMLHttpRequest();
         req.open("GET", url1);
         req.responseType = 'arraybuffer';
         req.onreadystatechange = function() {
@@ -79,8 +79,8 @@ function do_load(url, ver, cb) {
 
     store.exist(key, function(e) {
         if (e) {
-            console.log("version %d exist, load %s, rt version=%d", ver, key,
-                        window._rt.VERSION);
+            console.log("version %d exist, load %s, rt version=%d",
+                        ver, key, _rt.VERSION);
             cb(key);
         }
         else {

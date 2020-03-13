@@ -45,6 +45,8 @@ pkgs: self: super:
   conduit = pkgs.haskell.lib.dontCheck super.conduit;
 
   reflex = pkgs.haskell.lib.dontCheck (self.callPackage ./reflex_0_6_2_4.nix {});
+  #reflex-basic-host = pkgs.haskell.lib.dontCheck (self.callPackage ./reflex-basic-host.nix {});
+  reflex-basic-host = self.callPackage ./reflex-basic-host.nix {};
 
   Glob = pkgs.haskell.lib.dontCheck super.Glob;
   SHA = pkgs.haskell.lib.dontCheck super.SHA;

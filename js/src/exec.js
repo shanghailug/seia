@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 const wrtc = require('wrtc');
-const fdom = require('./fdom');
 const fs = require('fs');
 const xhr2 = require('xhr2');
 const path = require('path');
@@ -20,32 +19,22 @@ else {
 
 console.log("href: %s", href);
 
-var doc = new fdom.Document();
-doc.location.href = href;
-doc.location.reload = function() {
-    console.log("reload");
-};
-doc.currentScript = { herf: href };
+_rt = {};
+_rt.href = href;
 
-var win = doc.defaultView;
-win.RTCPeerConnection = wrtc.RTCPeerConnection;
-win.console = console;
-win.XMLHttpRequest = xhr2.XMLHttpRequest;
-win.URL = url.URL;
-win.JSON = JSON;
+_rt.RTCPeerConnection = wrtc.RTCPeerConnection;
+_rt.XMLHttpRequest = xhr2.XMLHttpRequest;
+
+_rt.URL = url.URL;
+_rt.JSON = JSON;
 
 // cwd
-win._rt = {};
-win._rt.cwd = process.cwd();
-win._rt.sid = 0; // TODO from args
+_rt.cwd = process.cwd();
+_rt.sid = 0; // TODO from args
 
-win._rt.rust_crypto_ed25519 = require("./rust_crypto_ed25519");
+_rt.rust_crypto_ed25519 = require("./rust_crypto_ed25519");
 
-win._rt.mqtt = require("mqtt");
-
-global.document = doc;
-global.window = win;
-
+_rt.mqtt = require("mqtt");
 
 if (/^file:/.test(href)) {
     console.log("load local file...");

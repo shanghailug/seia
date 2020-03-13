@@ -2,41 +2,43 @@
 VERSION = 2;
 
 function is_nodejs() {
-    return (typeof(window._rt.cwd) == 'string');
+    return (typeof(_rt.cwd) == 'string');
 }
 
-// ensure window._rt exist
-if (typeof(window._rt) != 'object') {
-    window._rt = {};
+// ensure _rt exist
+if (typeof(_rt) != 'object') {
+    _rt = {};
 }
 
 
-window._rt.VERSION = VERSION;  // this is RtConf._rt_conf_rt_version
-window._rt.is_nodejs = is_nodejs;
+_rt.VERSION = VERSION;  // this is RtConf._rt_conf_rt_version
+_rt.is_nodejs = is_nodejs;
 
-// nacl
-window._rt.nacl = require('tweetnacl');
-//window._rt.nacl_wasm = require('./tweetnacl');
-
+if (!_rt.is_nodejs()) {
+    _rt.URL = window.URL;
+    _rt.JSON = window.JSON;
+    _rt.RTCPeerConnection = window.RTCPeerConnection;
+    _rt.XMLHttpRequest = window.XMLHttpRequest;
+}
 
 // NOTE: mqtt is set inside ghcjs, or at external exec.js
-//window._rt.mqtt = require('mqtt');
-window._rt.store = require('./store');
+//_rt.mqtt = require('mqtt');
+_rt.store = require('./store');
 
 // runtime config
-if (typeof(window._rt.conf) != 'object') {
-    window._rt.conf = {};
+if (typeof(_rt.conf) != 'object') {
+    _rt.conf = {};
 }
 
 // default turn server & bootstrap node
-window._rt.conf.turn_server = window._rt.conf.turn_server || [
+_rt.conf.turn_server = _rt.conf.turn_server || [
     "stun:stun.stunprotocol.org"
 ];
 
-window._rt.conf.bootstrap_node = window._rt.conf.bootstrap_node || [
+_rt.conf.bootstrap_node = _rt.conf.bootstrap_node || [
     "9dp3gc3r7gngw3xhcs69bwyj3xaa75zodx5huw7rksyjs8in9qyy:0",
     "d531szhkbbjbd6q716mraz8qamji8akyyu17up8gbe731qtiw66y:0"
 ];
 
-window._rt.conf.mqtt_server = window._rt.conf.mqtt_server ||
+_rt.conf.mqtt_server = _rt.conf.mqtt_server ||
     "wss://mqtt.eclipse.org/mqtt";

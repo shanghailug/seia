@@ -60,7 +60,7 @@ import Language.Javascript.JSaddle ( JSM(..), MonadJSM(..)
                                    , JSVal(..), toJSVal
                                    , toJSString
                                    , strToText, valToStr, valIsNull
-                                   , jsg, js1
+                                   , js1, js
                                    , obj, new
                                    , (<#)
                                    )
@@ -188,7 +188,7 @@ createConnection :: ConnConf ->
                     Maybe JSVal -> JSM ()
 createConnection c logJSM stRef pcRef dcRef tsRef remoteSdp = do
   pc <- peerConnCfg (_conn_turn_server c) >>=
-        new (jsg "RTCPeerConnection") >>=
+        new (js_rt ^. js "RTCPeerConnection") >>=
         (return . DOM.RTCPeerConnection)
   let isOffer = isNothing remoteSdp
   liftIO $ atomicWriteIORef pcRef (Just pc)
@@ -197,7 +197,8 @@ createConnection c logJSM stRef pcRef dcRef tsRef remoteSdp = do
     e <- DOM.event
     can <- DOME.getCandidate e
     liftJSM $ do
-      can' <- strToText <$> (jsg "JSON"  ^. js1 "stringify" can >>= valToStr)
+      can' <- strToText <$> (js_rt ^. js "JSON"  ^. js1 "stringify" can >>=
+                            valToStr)
 
       let msg = MkRTCSignal RTCCandidate can'
 
@@ -239,7 +240,7 @@ createConnection c logJSM stRef pcRef dcRef tsRef remoteSdp = do
 
   --- TODO, this is promise, maybe reject
   DOM.setLocalDescription pc sdp
-  sdp' <- strToText <$> (jsg "JSON"  ^. js1 "stringify" sdp >>= valToStr)
+  sdp' <- strToText <$> (js_rt ^. js "JSON"  ^. js1 "stringify" sdp >>= valToStr)
 
   -- insert dc, should insert after last function
   -- which throw PromiseRejected exception
@@ -286,7 +287,7 @@ onRTCRx c logJSM stRef pcRef dcRef tsRef (epoch, msg) = do
 
     (MkRTCSignal tp str, _) ->
       do --- NOTE, wrtc will throw exception for null, "", {}
-         jv <- jsg "JSON" ^. js1 "parse" str
+         jv <- js_rt ^. js "JSON" ^. js1 "parse" str
          when (str == T.pack "null") $ consoleLog jv
 
          case (tp, pc', _conn_type c) of

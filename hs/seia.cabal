@@ -28,7 +28,7 @@ executable seia
                        eccrypto,
                        jsaddle, ghcjs-dom,
                        ghcjs-prim, ghcjs-base,
-                       reflex, reflex-dom-core,
+                       reflex, reflex-dom-core, reflex-basic-host,
                        utf8-string, unicode-show, base32-z-bytestring,
                        binary, random, co-log, co-log-core
 

@@ -1,6 +1,7 @@
 {-# language ForeignFunctionInterface, JavaScriptFFI #-}
 
 module SHLUG.Seia.Rt ( isNodeJS
+                     , js_rt
                      , consoleLog
                      , bs_to_u8a
                      , u8a_to_bs
@@ -25,7 +26,7 @@ import Language.Javascript.JSaddle ( JSM(..)
                                    , ghcjsPure
                                    , jsval
                                    , js, jss, jsf
-                                   , js0, js1, js2, jsg, jsg1
+                                   , js0, js1, js2
                                    )
 
 import Control.Monad.IO.Class (liftIO)
@@ -60,36 +61,42 @@ import Data.Word ( Word16 )
 mainVersion :: (Int, Int)
 mainVersion = (2, 0)
 
+foreign import javascript unsafe "$r = _rt;"
+  _rt :: IO JSVal
+
+foreign import javascript unsafe "$r = console;"
+  _console :: IO JSVal
+
 foreign import javascript interruptible
-  "window._rt.store.get($1, function (err, res) { $c(err, res); });"
+  "_rt.store.get($1, function (err, res) { $c(err, res); });"
   store_get_a :: JSString -> IO (JSVal, Uint8Array) -- IO (TypeOfErr, Uint8Array)
 
 foreign import javascript interruptible
-  "window._rt.store.set($1, $2, $c);"
+  "_rt.store.set($1, $2, $c);"
   store_set_a :: JSString -> Uint8Array -> IO JSVal -- IO (TypeOfErr)
 
 foreign import javascript interruptible
-  "window._rt.store.exist($1, $c);"
+  "_rt.store.exist($1, $c);"
   store_exist :: JSString -> IO JSVal -- IO Bool
 
 foreign import javascript interruptible
-  "window._rt.store.remove($1, $c);"
+  "_rt.store.remove($1, $c);"
   store_remove :: JSString -> IO JSVal -- IO TypeOfErr
 
 foreign import javascript unsafe "new Uint8Array(new ArrayBuffer(0))"
   js_empty_u8a :: IO Uint8Array
 
-foreign import javascript unsafe "window._rt.is_nodejs()"
-  js_window_rt_is_nodejs :: IO Bool
+foreign import javascript unsafe "_rt.is_nodejs()"
+  js_rt_is_nodejs :: IO Bool
 
-foreign import javascript unsafe "window._rt.VERSION"
+foreign import javascript unsafe "_rt.VERSION"
   js_rt_version :: IO Int
 
-foreign import javascript unsafe "window._rt.preloader_url"
+foreign import javascript unsafe "_rt.preloader_url"
   js_rt_preloader_url :: IO JSString
 
 foreign import javascript unsafe
-  "if (typeof(window._rt.sid) == 'number') { $r = window._rt.sid; } else { $r = -1; }"
+  "if (typeof(_rt.sid) == 'number') { $r = _rt.sid; } else { $r = -1; }"
   js_rt_sid :: IO Int
 
 foreign import javascript unsafe "$r = $1;"
@@ -114,23 +121,13 @@ foreign import javascript interruptible
   "$1.arrayBuffer().then($c);"
   js_blob_to_ab :: JSVal -> IO ArrayBuffer
 
-
-{-
-
-global :: Object
-#ifdef ghcjs_HOST_OS
-global = js_window
-foreign import javascript unsafe "$r = window"
-    js_window :: Object
-#else
-global = Object . JSVal . unsafePerformIO $ newIORef 4
-#endif
--}
+js_rt :: JSM JSVal
+js_rt = liftIO _rt
 
 consoleLog :: ToJSVal a => a -> JSM ()
 consoleLog a = do
   -- NOTE: jsg will get object from 'window' object
-  console <- jsg "console"
+  console <- liftIO _console
   console ^. js1 "log" a
   return ()
 
@@ -184,7 +181,7 @@ jsval_to_bs v = do
 
 isNodeJS :: JSM Bool
 isNodeJS = do
-  res <- liftIO js_window_rt_is_nodejs
+  res <- liftIO js_rt_is_nodejs
   return res
 
 storeGet :: Text -> JSM (Maybe ByteString)
@@ -235,18 +232,17 @@ rtConf = do
   ver <- liftIO js_rt_version
   url <- liftIO js_rt_preloader_url
 
-  ts' <- jsg "_rt" ^. js "conf" ^. js "turn_server"
-  bn' <- jsg "_rt" ^. js "conf" ^. js "bootstrap_node"
+  ts' <- js_rt ^. js "conf" ^. js "turn_server"
+  bn' <- js_rt ^. js "conf" ^. js "bootstrap_node"
 
   ts <- fromMaybe [] <$> fromJSVal ts'
   bn1 <- fromMaybe [] <$> fromJSVal bn'
 
   let bn = map read bn1
 
-  mqtt_server' <- jsg "_rt" ^. js "conf" ^. js "mqtt_server"
+  mqtt_server' <- js_rt ^. js "conf" ^. js "mqtt_server"
   mqtt_server <- fromMaybe T.empty <$> fromJSVal mqtt_server'
 
-  --turn_server_list <- jsg "window" ^. js "_rt" ^. js "conf" ^. js "turn_server_list
   return $ RtConf { _rt_is_nodejs = is_nodejs
                   , _rt_sid = if sid' < 0 then Nothing else Just (toEnum sid')
                   , _rt_preloader_url = fromJSString url

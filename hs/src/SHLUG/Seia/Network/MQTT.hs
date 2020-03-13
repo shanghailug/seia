@@ -8,7 +8,7 @@ module SHLUG.Seia.Network.MQTT ( mqttNew
                                ) where
 
 import SHLUG.Seia.Type
-import SHLUG.Seia.Rt (consoleLog)
+import SHLUG.Seia.Rt (consoleLog, js_rt)
 
 import qualified System.IO as IO
 
@@ -22,7 +22,7 @@ import Language.Javascript.JSaddle( JSM(..)
                                   , isNull
                                   , val, fun
                                   , js, jss, jsf
-                                  , js0, js1, js2, jsg
+                                  , js0, js1, js2
                                   , new, obj
                                   , (<#)
                                   , ghcjsPure
@@ -71,8 +71,7 @@ clientNew :: NID -> Text -> (MQTTState -> IO ()) ->
 clientNew nid url stT rxT = do
   let topic = topicGen nid
   liftIO $ stT MQTTConnecting
-  rt <- jsg "_rt"
-  cli <- rt ^. js "mqtt"  ^. js1 "connect" url
+  cli <- js_rt ^. js "mqtt"  ^. js1 "connect" url
   -- handle connect
   cli ^. js2 "on" "connect" (fun $ \_ _ _ -> do
     -- subscribe
