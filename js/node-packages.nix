@@ -544,6 +544,24 @@ let
         sha1 = "c2e7a9f772094dee9d34202ae8acce4687875580";
       };
     };
+    "libsodium-0.7.6" = {
+      name = "libsodium";
+      packageName = "libsodium";
+      version = "0.7.6";
+      src = fetchurl {
+        url = "https://registry.npmjs.org/libsodium/-/libsodium-0.7.6.tgz";
+        sha512 = "hPb/04sEuLcTRdWDtd+xH3RXBihpmbPCsKW/Jtf4PsvdyKh+D6z2D2gvp/5BfoxseP+0FCOg66kE+0oGUE/loQ==";
+      };
+    };
+    "libsodium-wrappers-0.7.6" = {
+      name = "libsodium-wrappers";
+      packageName = "libsodium-wrappers";
+      version = "0.7.6";
+      src = fetchurl {
+        url = "https://registry.npmjs.org/libsodium-wrappers/-/libsodium-wrappers-0.7.6.tgz";
+        sha512 = "OUO2CWW5bHdLr6hkKLHIKI4raEkZrf3QHkhXsJ1yCh6MZ3JDA7jFD3kCATNquuGSG6MjjPHQIQms0y0gBDzjQg==";
+      };
+    };
     "minimatch-3.0.4" = {
       name = "minimatch";
       packageName = "minimatch";
@@ -1251,6 +1269,8 @@ let
       sources."isarray-1.0.0"
       sources."json-stable-stringify-without-jsonify-1.0.1"
       sources."leven-2.1.0"
+      sources."libsodium-0.7.6"
+      sources."libsodium-wrappers-0.7.6"
       sources."minimatch-3.0.4"
       sources."minimist-0.0.8"
       sources."minipass-2.9.0"

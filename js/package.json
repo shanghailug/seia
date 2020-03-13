@@ -11,6 +11,8 @@
   "license": "GPL-3.0-or-later",
   "dependencies": {
     "fast-text-encoding": "^1.0.0",
+    "libsodium": "^0.7.6",
+    "libsodium-wrappers": "^0.7.6",
     "mqtt": "^3.0.0",
     "tweetnacl": "^1.0.3",
     "wrtc": "^0.4.3",

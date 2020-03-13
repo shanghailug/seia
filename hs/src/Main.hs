@@ -90,8 +90,6 @@ app :: ( Reflex t
 app = do
   logIOM I "app start"
 
-  liftIO $ js_nacl_wasm_wait_ready
-
   rt_conf <- liftJSM rtConf
   logIOM I $ "rt_conf = " `T.append` (T.pack $ show rt_conf)
   conf <- confB never never
@@ -99,7 +97,7 @@ app = do
   let t' = t { _conf_priv_key = BS.empty }
   logIOM I $ "conf = " `T.append` (T.pack $ show t')
 
-  liftIO $ msgTrivalTest (_conf_nid t) (_conf_priv_key t)
+  --liftIO $ msgTrivalTest (_conf_nid t) (_conf_priv_key t)
   --mqttLoopbackTest
   let tx = never
   connMan <- connManNew MkConnManConf { _conn_man_tx = tx
@@ -119,6 +117,6 @@ main = do
                                           _ -> False
                                    ) richMessageAction
   let logEnv = if True then logEnv1 else logEnv2
-  mainWidget $ withLogIO logEnv1 app
+  mainWidget $ withLogIO logEnv app
   -- for nodejs, not quit
   liftIO $ forever $ threadDelay 5000000

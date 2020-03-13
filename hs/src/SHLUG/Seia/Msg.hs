@@ -10,7 +10,6 @@ module SHLUG.Seia.Msg
   , emptySign
   , msgTrivalTest
   , msgFillEpoch
-  , js_nacl_wasm_wait_ready
   ) where
 
 import SHLUG.Seia.Type
@@ -45,28 +44,11 @@ import Crypto.ECC.Ed25519.Internal.Ed25519(SecKey(..))
 
 import JavaScript.TypedArray ( TypedArray(..)
                              , Uint8Array
+                             , subarray
                              )
-import Language.Javascript.JSaddle ( JSM(..))
+import Language.Javascript.JSaddle ( JSM(..), ghcjsPure )
 import Control.Monad.IO.Class (liftIO)
 import System.IO.Unsafe(unsafePerformIO)
-
-foreign import javascript unsafe "window._rt.nacl.sign.detached($1, $2)"
-  js_nacl_dsign :: Uint8Array -> Uint8Array -> IO Uint8Array
-
-foreign import javascript unsafe "window._rt.nacl.sign.detached.verify($1, $2, $3)"
-  js_nacl_dverify :: Uint8Array -> Uint8Array -> Uint8Array -> IO Bool
-
-foreign import javascript unsafe "window._rt.nacl.sign.keyPair.fromSeed($1).secretKey"
-  js_nacl_gensk :: Uint8Array -> IO Uint8Array
-
-foreign import javascript unsafe "window._rt.nacl_wasm.dsign($1, $2)"
-  js_nacl_wasm_dsign :: Uint8Array -> Uint8Array -> IO Uint8Array
-
-foreign import javascript unsafe "window._rt.nacl_wasm.dverify($1, $2, $3)"
-  js_nacl_wasm_dverify :: Uint8Array -> Uint8Array -> Uint8Array -> IO Bool
-
-foreign import javascript interruptible "window._rt.nacl_wasm.onready($c);"
-  js_nacl_wasm_wait_ready :: IO ()
 
 foreign import javascript unsafe "window._rt.rust_crypto_ed25519.sign($1,$2)"
   js_rust_crypto_sign :: Uint8Array -> Uint8Array -> IO Uint8Array
@@ -74,32 +56,13 @@ foreign import javascript unsafe "window._rt.rust_crypto_ed25519.sign($1,$2)"
 foreign import javascript unsafe "window._rt.rust_crypto_ed25519.verify($1,$2,$3)"
   js_rust_crypto_verify :: Uint8Array -> Uint8Array -> Uint8Array -> IO Bool
 
+foreign import javascript unsafe "window._rt.rust_crypto_ed25519.keypair($1)"
+  js_rust_crypto_keypair :: Uint8Array -> IO Uint8Array
+
 sign :: ByteString -> ByteString -> ByteString
 sign = sign4
 
-sign1 sk dat = unsafePerformIO $ do
-  sk' <- bs_to_u8a sk
-  dat' <- bs_to_u8a dat
-
-  -- NOTE: this step may move to confB,
-  -- but will not save too much cpu time
-  sk1 <- js_nacl_gensk sk'
-
-  res <- liftIO $ js_nacl_dsign dat' sk1
-  u8a_to_bs res
-
 sign2 sk dat = let Right res = dsign (SecKeyBytes sk) dat in res
-
-sign3 sk dat = unsafePerformIO $ do
-  sk' <- bs_to_u8a sk
-  dat' <- bs_to_u8a dat
-
-  -- NOTE: this step may move to confB,
-  -- but will not save too much cpu time
-  sk1 <- js_nacl_gensk sk'
-
-  res <- liftIO $ js_nacl_wasm_dsign sk1 dat'
-  u8a_to_bs res
 
 sign4 sk dat = unsafePerformIO $ do
   sk' <- bs_to_u8a sk
@@ -107,31 +70,20 @@ sign4 sk dat = unsafePerformIO $ do
 
   -- NOTE: this step may move to confB,
   -- but will not save too much cpu time
-  sk1 <- js_nacl_gensk sk'
+  pair <- js_rust_crypto_keypair sk' -- first 64B is sk, last 32B is pk
+  sk1' <- ghcjsPure $ subarray 0 64 pair
 
-  res <- liftIO $ js_rust_crypto_sign dat' sk1
+  res <- liftIO $ js_rust_crypto_sign dat' sk1'
   u8a_to_bs res
 
 
 verify :: ByteString -> ByteString -> ByteString -> Bool
 verify = verify4
 
-verify1 pk sig dat = unsafePerformIO $ do
-  dat' <- bs_to_u8a dat
-  sig' <- bs_to_u8a sig
-  pk' <- bs_to_u8a pk
-  liftIO $ js_nacl_dverify dat' sig' pk'
-
 verify2 pk sig dat =
   case dverify pk sig dat of
        Right _ -> True
        Left  _ -> False
-
-verify3 pk sig dat = unsafePerformIO $ do
-  dat' <- bs_to_u8a dat
-  sig' <- bs_to_u8a sig
-  pk' <- bs_to_u8a pk
-  liftIO $ js_nacl_wasm_dverify pk' sig' dat'
 
 verify4 pk sig dat = unsafePerformIO $ do
   dat' <- bs_to_u8a dat

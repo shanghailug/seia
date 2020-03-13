@@ -163,20 +163,20 @@ _sig[61]= 253;
 _sig[62]= 85;
 _sig[63]= 5;
 
-a = require("./tweetnacl");
+a = require("libsodium-wrappers");
 
-a.onready(function() {
+a.ready.then(() => {
     var i;
     var msg = new Uint8Array(new ArrayBuffer(16));
     var sig = new Uint8Array(new ArrayBuffer(64));
 
     for (i = 0; i < 16; ++i) msg[i] = i;
 
-    for (i = 0; i < 1000; ++i) {
-        var sig = a.dsign(_sk, msg);
-        if (i == 0) console.log("sig=", sig);
+    for (i = 0; i < 10000; ++i) {
+        var sm = a.crypto_sign(msg, _sk)
+        if (i == 0) console.log("sm=", sm);
 
-        if (!a.dverify(_pk, sig, msg)) {
+        if (!a.crypto_sign_open(sm, _pk)) {
             console.log("vfy=fail");
         }
     }
