@@ -50,6 +50,6 @@ SEIA分为执行器、加载器、运行兼容层和主程序四个部分：
 - 编译主程序
 : nix-build hs/release.nix
 : mkdir -p store/version
-: cp result/bin/seia.jsexe/all.js store/version/seia-1
+: cp result/bin/seia.jsexe/all.js store/version/seia-2
 - 运行
 : ./js/src/exec.js ./seia-preload.js
