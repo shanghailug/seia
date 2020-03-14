@@ -9,7 +9,7 @@ module SHLUG.Seia.Rt ( isNodeJS
                      , u8a_to_jsval
                      , rtConf
                      , RtConf(..)
-                     , sign, verify
+                     , sign, verify, seed2sk
                      , storeGet
                      , storeSet
                      , storeRemove
@@ -266,6 +266,13 @@ foreign import javascript unsafe "_rt.rust_crypto_ed25519.verify($1,$2,$3)"
 foreign import javascript unsafe "_rt.rust_crypto_ed25519.keypair($1)"
   js_rust_crypto_keypair :: Uint8Array -> IO Uint8Array
 
+seed2sk :: ByteString -> ByteString
+seed2sk seed = unsafePerformIO $ do
+  seed' <- bs_to_u8a seed
+  pair <- js_rust_crypto_keypair seed' -- first 64B is sk, last 32B is pk
+  sk' <- ghcjsPure $ subarray 0 64 pair
+  u8a_to_bs sk'
+
 sign :: ByteString -> ByteString -> ByteString
 sign = sign4
 
@@ -273,12 +280,7 @@ sign4 sk dat = unsafePerformIO $ do
   sk' <- bs_to_u8a sk
   dat' <- bs_to_u8a dat
 
-  -- NOTE: this step may move to confB,
-  -- but will not save too much cpu time
-  pair <- js_rust_crypto_keypair sk' -- first 64B is sk, last 32B is pk
-  sk1' <- ghcjsPure $ subarray 0 64 pair
-
-  res <- liftIO $ js_rust_crypto_sign dat' sk1'
+  res <- liftIO $ js_rust_crypto_sign dat' sk'
   u8a_to_bs res
 
 

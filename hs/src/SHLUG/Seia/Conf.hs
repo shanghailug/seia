@@ -119,10 +119,14 @@ confB evSetTurnServer evSetBootstrapNode = do
   let ts' = ts ++ _rt_conf_turn_server rt_conf
   let bn' = bn ++ _rt_conf_fallback_bootstrap_node rt_conf
 
+  -- if sk is actually secret seed,
+  -- then we generate 64 byte secret key from seed
+  let sk' = if BS.length sk == 32 then seed2sk sk else sk
+
   let res0 = Conf { _conf_turn_server = ts'
                   , _conf_bootstrap_node = bn'
                   , _conf_nid = nid
-                  , _conf_priv_key = sk
+                  , _conf_priv_key = sk'
                   }
 
   let e1 = ffor evSetTurnServer    Left
