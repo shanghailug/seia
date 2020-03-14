@@ -9,6 +9,7 @@ module SHLUG.Seia.Rt ( isNodeJS
                      , u8a_to_jsval
                      , rtConf
                      , RtConf(..)
+                     , sign, verify
                      , storeGet
                      , storeSet
                      , storeRemove
@@ -30,6 +31,7 @@ import Language.Javascript.JSaddle ( JSM(..)
                                    )
 
 import Control.Monad.IO.Class (liftIO)
+import System.IO.Unsafe(unsafePerformIO)
 
 import GHCJS.Buffer ( toByteString, fromByteString
                     , getUint8Array
@@ -253,3 +255,38 @@ rtConf = do
                   , _rt_conf_fallback_bootstrap_node = bn
                   , _rt_mqtt_server = mqtt_server
                   }
+
+
+foreign import javascript unsafe "_rt.rust_crypto_ed25519.sign($1,$2)"
+  js_rust_crypto_sign :: Uint8Array -> Uint8Array -> IO Uint8Array
+
+foreign import javascript unsafe "_rt.rust_crypto_ed25519.verify($1,$2,$3)"
+  js_rust_crypto_verify :: Uint8Array -> Uint8Array -> Uint8Array -> IO Bool
+
+foreign import javascript unsafe "_rt.rust_crypto_ed25519.keypair($1)"
+  js_rust_crypto_keypair :: Uint8Array -> IO Uint8Array
+
+sign :: ByteString -> ByteString -> ByteString
+sign = sign4
+
+sign4 sk dat = unsafePerformIO $ do
+  sk' <- bs_to_u8a sk
+  dat' <- bs_to_u8a dat
+
+  -- NOTE: this step may move to confB,
+  -- but will not save too much cpu time
+  pair <- js_rust_crypto_keypair sk' -- first 64B is sk, last 32B is pk
+  sk1' <- ghcjsPure $ subarray 0 64 pair
+
+  res <- liftIO $ js_rust_crypto_sign dat' sk1'
+  u8a_to_bs res
+
+
+verify :: ByteString -> ByteString -> ByteString -> Bool
+verify = verify4
+
+verify4 pk sig dat = unsafePerformIO $ do
+  dat' <- bs_to_u8a dat
+  sig' <- bs_to_u8a sig
+  pk' <- bs_to_u8a pk
+  liftIO $ js_rust_crypto_verify dat' pk' sig'
