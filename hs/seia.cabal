@@ -36,6 +36,7 @@ executable seia
   js-sources:   jsbits/sha512.js
                 jsbits/sha512_glue.js
                 jsbits/mqtt.min.js
+                jsbits/rust_crypto_ed25519_full.js
 
   default-language:    Haskell2010
 

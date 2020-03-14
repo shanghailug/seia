@@ -32,7 +32,7 @@ _rt.JSON = JSON;
 _rt.cwd = process.cwd();
 _rt.sid = 0; // TODO from args
 
-_rt.rust_crypto_ed25519 = require("./rust_crypto_ed25519");
+//_rt.rust_crypto_ed25519 = require("./rust_crypto_ed25519");
 
 _rt.mqtt = require("mqtt");
 
