@@ -9,7 +9,7 @@ module SHLUG.Seia.Rt ( isNodeJS
                      , u8a_to_jsval
                      , rtConf
                      , RtConf(..)
-                     , sign, verify, seed2sk
+                     , sign, verify, seed2sk, sign_verify_benchmark
                      , storeGet
                      , storeSet
                      , storeRemove
@@ -58,6 +58,9 @@ import Control.Lens ((^.))
 import Data.Text ( Text(..) )
 import qualified Data.Text as T
 import Data.Word ( Word16 )
+
+import Text.Printf
+import Data.Time
 
 -- major for protocol compatiable check
 mainVersion :: (Int, Int)
@@ -292,3 +295,16 @@ verify4 pk sig dat = unsafePerformIO $ do
   sig' <- bs_to_u8a sig
   pk' <- bs_to_u8a pk
   liftIO $ js_rust_crypto_verify dat' pk' sig'
+
+
+sign_verify_benchmark :: (ByteString, ByteString) -> Int -> IO ()
+sign_verify_benchmark (sk, pk) n = do
+  let dat n = BS.pack $ take 16 $ drop n $ cycle [0..15]
+  t0 <- getCurrentTime
+  printf "sign_verify_benchmark start...\n"
+  let res = map (\x -> let y = dat x in verify pk (sign sk y) y) [1..n]
+  let res1 = all id res
+  printf "sign_verify_benchmark result: %s\n" (show $ all id res)
+  t1 <- getCurrentTime
+  printf "sign_verify_benchmark(%d) time %s\n"
+         n  (show $ diffUTCTime t1 t0)

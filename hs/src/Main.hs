@@ -99,6 +99,9 @@ app = do
   let t' = t { _conf_priv_key = BS.empty }
   logIOM I $ "conf = " `T.append` (T.pack $ show t')
 
+  let (UID pk) = getUID $ _conf_nid t
+  liftIO $ sign_verify_benchmark (_conf_priv_key t, pk) 1000
+
   --liftIO $ msgTrivalTest (_conf_nid t) (_conf_priv_key t)
   --mqttLoopbackTest
   let tx = never
