@@ -117,11 +117,12 @@ app = do
 
 main :: IO ()
 main = do
-  let logEnv1 = logEnvDefault
-  let logEnv2 = MkLogEnv $ cfilter (\case Msg { msgSeverity = I }-> True
-                                          _ -> False
-                                   ) richMessageAction
-  let logEnv = if True then logEnv1 else logEnv2
+  -- TODO, use askJSM?
+  rtconf <- rtConf
+
+  let logEnv = MkLogEnv $ cfilter (\x -> elem (msgSeverity x)
+                                              (_rt_conf_log_level rtconf)
+                                  ) richMessageAction
 
   -- JSM is IO
   x <- isNodeJS

@@ -1,4 +1,5 @@
 {-# language ForeignFunctionInterface, JavaScriptFFI #-}
+{-# language PatternSynonyms, LambdaCase #-}
 
 module SHLUG.Seia.Rt ( isNodeJS
                      , js_rt
@@ -51,7 +52,7 @@ import qualified Data.JSString as JSString
 
 import Data.ByteString(ByteString(..))
 import qualified Data.ByteString as BS
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, mapMaybe)
 
 import Control.Lens ((^.))
 
@@ -61,6 +62,10 @@ import Data.Word ( Word16 )
 
 import Text.Printf
 import Data.Time
+
+import Colog ( pattern D, pattern I, pattern W, pattern E
+             , Severity
+             )
 
 -- major for protocol compatiable check
 mainVersion :: (Int, Int)
@@ -227,6 +232,7 @@ data RtConf = RtConf
             -- from windw._rt.conf
             , _rt_conf_turn_server :: [Text]
             , _rt_conf_fallback_bootstrap_node :: [NID]
+            , _rt_conf_log_level :: [Severity]
             , _rt_mqtt_server :: Text
             } deriving (Eq, Show)
 
@@ -248,6 +254,14 @@ rtConf = do
   mqtt_server' <- js_rt ^. js "conf" ^. js "mqtt_server"
   mqtt_server <- fromMaybe T.empty <$> fromJSVal mqtt_server'
 
+  lv <- fromMaybe [] <$>
+        (js_rt ^. js "conf" ^.js "log_level" >>= fromJSVal) :: JSM [String]
+  let lv' = mapMaybe (\case "I" -> Just I
+                            "D" -> Just D
+                            "E" -> Just E
+                            "W" -> Just W
+                            _   -> Nothing) lv
+
   return $ RtConf { _rt_is_nodejs = is_nodejs
                   , _rt_sid = if sid' < 0 then Nothing else Just (toEnum sid')
                   , _rt_preloader_url = fromJSString url
@@ -256,6 +270,7 @@ rtConf = do
                   --
                   , _rt_conf_turn_server = ts
                   , _rt_conf_fallback_bootstrap_node = bn
+                  , _rt_conf_log_level = lv'
                   , _rt_mqtt_server = mqtt_server
                   }
 

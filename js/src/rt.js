@@ -42,3 +42,7 @@ _rt.conf.bootstrap_node = _rt.conf.bootstrap_node || [
 
 _rt.conf.mqtt_server = _rt.conf.mqtt_server ||
     "wss://mqtt.eclipse.org/mqtt";
+
+_rt.conf.log_level = _rt.conf.log_level || [
+    "E", "W", "I", "D"
+];

@@ -219,8 +219,19 @@ createConnection c logJSM stRef pcRef dcRef tsRef remoteSdp = do
        -- NOTE: should setup dc(callback) as soon as possible
        -- should not insert any IO op between
        setupDataChannel c logJSM stRef pcRef dcRef tsRef dc
-       logJSM D $ T.pack $ printf "%s: on data channel" (show $ _conn_remote c)
+       logJSM D $ T.pack $ printf "%s: on data channel" (sss 8 $ _conn_remote c)
        checkDC c logJSM stRef dc
+
+  -- for debug, add more state event handler
+  DOM.on pc DOM.connectionstatechange $ do
+    e <- DOM.event
+    let jv = DOM.unEvent e --
+    st <- liftJSM $ DOM.getConnectionState pc
+
+    liftJSM $ logJSM D $ T.pack $
+                         printf "%s: conn state %s"
+                                (sss 8 $ _conn_remote c) (show st)
+
 
   dc' <- if isOffer
          then Just <$> DOM.createDataChannel pc "ch0" Nothing
@@ -270,6 +281,7 @@ onRTCRx c logJSM stRef pcRef dcRef tsRef (epoch, msg) = do
   logJSM D $ T.pack $ printf "on rtc rx: %s" (sss 50 msg)
   let tp = _conn_type c
   pc' <- liftIO $ readIORef pcRef
+  let rstr = sss 8 $ _conn_remote c
   case (msg, tp) of
     (MkRTCReq ver, ConnIsServer) ->
       if ver /= _conn_main_ver c
@@ -291,12 +303,15 @@ onRTCRx c logJSM stRef pcRef dcRef tsRef (epoch, msg) = do
          when (str == T.pack "null") $ consoleLog jv
 
          case (tp, pc', _conn_type c) of
-           (RTCOffer,  _, ConnIsServer) ->
+           (RTCOffer,  _, ConnIsServer) -> do
+             logJSM D $ T.pack $ printf "webrtc:off:%s -> %s" rstr str
              createConnection c logJSM stRef pcRef dcRef tsRef (Just jv)
-           (RTCAnswer, Just pc, ConnIsClient) ->
+           (RTCAnswer, Just pc, ConnIsClient) -> do
+             logJSM D $ T.pack $ printf "webrtc:ans:%s -> %s" rstr str
              catch (DOM.setRemoteDescription pc (DOM.RTCSessionDescriptionInit jv))
                    (fmap (const ()) . promiseH0)
-           (RTCCandidate, Just pc, _) ->
+           (RTCCandidate, Just pc, _) -> do
+             logJSM D $ T.pack $ printf "webrtc:can:%s -> %s" rstr str
              catch (DOM.addIceCandidate pc (DOM.RTCIceCandidate jv))
                    (fmap (const ()) . promiseH0)
            _ -> do logJSM W $ T.pack $ "pc is not exist or connection type incorrect"
