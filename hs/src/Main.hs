@@ -23,6 +23,7 @@ import SHLUG.Seia.Network.MQTT
 import SHLUG.Seia.Msg
 import SHLUG.Seia.Network.ConnMan
 import SHLUG.Seia.Log
+import SHLUG.Seia.Service
 
 import Text.Show.Unicode
 
@@ -88,7 +89,7 @@ app :: ( Reflex t
        , MonadFix m
        , PostBuild t m
        , WithLogIO m
-       ) => m ()
+       ) => m (ConnMan t)
 app = do
   logIOM I "app start"
 
@@ -113,7 +114,27 @@ app = do
   performEvent_ $ ffor (updated $ _conn_man_mqtt_state connMan) $ \ev ->
     logIOM D $ "mqtt state: " `T.append` (T.pack $ show ev)
 
-  return ()
+  serviceConsole connMan
+
+  return connMan
+
+appDOM :: ( Reflex t
+          , DomBuilder t m
+          , DomBuilderSpace m ~ GhcjsDomSpace
+          , TriggerEvent t m
+          , PerformEvent t m
+          , MonadJSM (Performable m)
+          , MonadSample t (Performable m)
+          , MonadHold t (Performable m)
+          , MonadHold t m
+          , MonadJSM m
+          , MonadFix m
+          , PostBuild t m
+          , WithLogIO m
+          ) =>
+          ConnMan t -> m ()
+appDOM cm = do
+  serviceDOM cm
 
 main :: IO ()
 main = do
@@ -128,7 +149,7 @@ main = do
   x <- isNodeJS
 
   if x
-  then basicHostForever $ withLogIO logEnv app
-  else mainWidget $ withLogIO logEnv app
+  then basicHostForever $ withLogIO logEnv (app >> return ())
+  else mainWidget $ withLogIO logEnv (app >>= appDOM)
   -- for nodejs, not quit
   liftIO $ forever $ threadDelay 5000000

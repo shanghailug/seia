@@ -46,3 +46,5 @@ _rt.conf.mqtt_server = _rt.conf.mqtt_server ||
 _rt.conf.log_level = _rt.conf.log_level || [
     "E", "W", "I", "D"
 ];
+
+_rt.conf.service = _rt.conf.service || [];
