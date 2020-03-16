@@ -136,6 +136,8 @@ data ConnConf = MkConnConf { _conn_local :: NID
                            , _conn_turn_server :: [Text]
                            , _conn_msg_sign :: ByteString -> ByteString
                            , _conn_nid_exist :: Bool -- for MkRTCRes
+                           , _conn_rx_cb' :: JSM () -- for status up
+                           , _conn_rtt_cb :: Int -> JSM ()
                            }
 
 data Conn = MkConn { _conn_tx_cb :: ByteString -> JSM ()
@@ -327,11 +329,15 @@ procMsg :: ConnConf -> LogJSM -> JSVal -> DOM.RTCDataChannel -> UTCTime ->
 procMsg c logJSM pkt dc t0 tsRef hbRef payload = do
   -- update timestamp
   liftIO $ getEpochMs >>= atomicWriteIORef tsRef
+  _conn_rx_cb' c -- update
   case decodeOrFail (fromStrict payload) of
        -- fail to decode
        Left _ -> return ()
        -- heart beat
        Right (_, _, MsgHeartbeat) -> do
+             liftIO $ forkIO $ threadDelay (500 * 1000) >>
+                               sendJSVal pkt dc
+
              t <- liftIO getCurrentTime
              ms <- liftIO getEpochMs
              ms0 <- liftIO $ atomicModifyIORef' hbRef (ms,)
@@ -340,17 +346,17 @@ procMsg c logJSM pkt dc t0 tsRef hbRef payload = do
              when (floor (dt*2) `mod` 120 == 0) $
                   logJSM D $ T.pack $ printf "----> uptime %s : %s\n"
                                              (sss 8 (_conn_remote c)) (show dt)
-             when (ms0 > 0) $
+             when (ms0 > 0) $ do
+                  let rtt = fromIntegral $ ms - ms0 - 1000
+                  _conn_rtt_cb c $ rtt
                   logJSM D $ T.pack $ printf "----> %s: rtt %d ms"
                                              (sss 8 $ _conn_remote c)
-                                             (ms - ms0 - 1000)
-             liftIO $ forkIO $ threadDelay (500 * 1000) >>
-                               sendJSVal pkt dc
+                                             rtt
              return ()
 
        Right (_, _, msg) -> do
              when (msgVerify payload) do
-                  liftJSM $ _conn_rx_cb c $ (msg, payload)
+                  _conn_rx_cb c $ (msg, payload)
 
 -- TODO, check first message with 2 x N tolerantion, then 1 x N
 heartbeatChecker :: JSVal -> ConnConf ->

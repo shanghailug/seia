@@ -120,6 +120,8 @@ data ConnMan t = MkConnMan { _conn_man_rx :: Event t (NID, ByteString)
                            , _conn_man_mqtt_state :: Dynamic t MQTTState
                            , _conf_set_turn_server :: Event t [Text]
                            , _conf_set_bootstrap_node :: Event t [Text]
+                           , _conn_man_rx' :: Event t NID
+                           , _conn_man_rtt :: Event t (NID, Int)
                            }
 
 data ConnManConf t =
@@ -180,6 +182,11 @@ connManNew c = do
                             else Map.update (\(c,_) -> Just (c,st)) nid m
 
   stD <- accumDyn stAccF Map.empty stE
+
+  -- used for last received msg
+  (rxE', rxT') <- newTriggerEvent
+  (rttE, rttT) <- newTriggerEvent
+
 
   ------ current route table
 
@@ -296,6 +303,8 @@ connManNew c = do
                          , _conn_type = ConnIsServer
                          , _conn_st_cb = on_conn_st
                          , _conn_rx_cb = liftIO . rxPreT . uncurry (src,,)
+                         , _conn_rx_cb' = liftIO $ rxT' src
+                         , _conn_rtt_cb = liftIO . rttT . (src,)
                          , _conn_turn_server = ts
                          , _conn_msg_sign = conn_msg_sign
                          , _conn_nid_exist = Map.member src rtbl -- req node exist?
@@ -375,6 +384,8 @@ connManNew c = do
                                  , _conn_type = ConnIsClient
                                  , _conn_st_cb = on_conn_st
                                  , _conn_rx_cb = liftIO . rxPreT . uncurry (dst,,)
+                                 , _conn_rx_cb' = liftIO $ rxT' dst
+                                 , _conn_rtt_cb = liftIO . rttT . (dst,)
                                  , _conn_turn_server = ts
                                  , _conn_msg_sign = conn_msg_sign
                                  , _conn_nid_exist = False -- always F for client
@@ -404,6 +415,8 @@ connManNew c = do
              (nid, case x of { Left _ -> ConnIdle; Right st -> st})
 
   return MkConnMan { _conn_man_rx = rxE
+                   , _conn_man_rx' = rxE'
+                   , _conn_man_rtt = rttE
                    , _conn_man_st_d = st_d
                    , _conn_man_st_e = st_e
                    , _conn_man_route_table = rtblB
