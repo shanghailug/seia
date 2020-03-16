@@ -233,6 +233,7 @@ data RtConf = RtConf
             , _rt_conf_turn_server :: [Text]
             , _rt_conf_fallback_bootstrap_node :: [NID]
             , _rt_conf_log_level :: [Severity]
+            , _rt_conf_service :: [Text]
             , _rt_mqtt_server :: Text
             } deriving (Eq, Show)
 
@@ -262,6 +263,9 @@ rtConf = do
                             "W" -> Just W
                             _   -> Nothing) lv
 
+  sv <- fromMaybe [] <$>
+        (js_rt ^. js "conf" ^. js "service" >>= fromJSVal)
+
   return $ RtConf { _rt_is_nodejs = is_nodejs
                   , _rt_sid = if sid' < 0 then Nothing else Just (toEnum sid')
                   , _rt_preloader_url = fromJSString url
@@ -271,6 +275,7 @@ rtConf = do
                   , _rt_conf_turn_server = ts
                   , _rt_conf_fallback_bootstrap_node = bn
                   , _rt_conf_log_level = lv'
+                  , _rt_conf_service = sv
                   , _rt_mqtt_server = mqtt_server
                   }
 
