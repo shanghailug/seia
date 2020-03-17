@@ -24,7 +24,7 @@ if (!_rt.is_nodejs()) {
 
 rt.preloader_url = url;
 
-loader.load(url, rt.VERSION,
+loader.load(url, rt.SEQ,
             function (key) {
                 if (rt.is_nodejs()) {
                     var path = rt.store.get_path(key);
