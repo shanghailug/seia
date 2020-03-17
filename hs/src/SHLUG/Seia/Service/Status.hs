@@ -79,7 +79,7 @@ stRow :: ( Reflex t
 stRow (nid, st) = do
   el "tr" $ do el "td" $ text (T.pack $ show nid)
                el "td" $ text (T.pack $ show $ _node_cst st)
-               elAttr "td" ("style" =: "align:right") $
+               elAttr "td" ("style" =: "text-align:right") $
                       text (T.pack $ show $ _node_rtt st)
                el "td" $ text (T.pack $ fromMaybe "" (show <$> (_node_le st)))
 
