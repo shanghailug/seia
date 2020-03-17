@@ -267,11 +267,15 @@ rtConf = do
   sv <- fromMaybe [] <$>
         (js_rt ^. js "conf" ^. js "service" >>= fromJSVal)
 
+  seq <- fromMaybe 1 <$> (js_rt ^. js "SEQ" >>= fromJSVal)
+  seq_curr <- fromMaybe 1 <$> (js_rt ^. js "SEQ_CURR" >>= fromJSVal)
+
   return $ RtConf { _rt_is_nodejs = is_nodejs
                   , _rt_sid = if sid' < 0 then Nothing else Just (toEnum sid')
                   , _rt_preloader_url = fromJSString url
                   , _rt_main_version = mainVersion
-                  , _rt_version = ver
+                  , _rt_seq = seq
+                  , _rt_seq_curr= seq_curr
                   --
                   , _rt_conf_turn_server = ts
                   , _rt_conf_fallback_bootstrap_node = bn
