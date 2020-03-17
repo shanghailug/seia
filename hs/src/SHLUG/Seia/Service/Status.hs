@@ -15,7 +15,7 @@ import SHLUG.Seia.Type
 import SHLUG.Seia.Log
 
 import SHLUG.Seia.Network.MQTT(MQTTState(..))
-import SHLUG.Seia.Network.Conn(ConnState(..))
+import SHLUG.Seia.Network.Conn(ConnState(..), connStEnd)
 
 import Reflex
 import Reflex.Dom.Core
@@ -34,6 +34,7 @@ import Control.Monad.Fix (MonadFix(..))
 import Control.Lens
 
 import qualified Data.Text as T
+import qualified Data.Map.Strict as M
 
 {-
 
@@ -51,6 +52,51 @@ rtbl
 curr time
 
 -}
+
+filterNID :: (Reflex t) => NID -> Event t (NID, a) -> Event t a
+filterNID nid e = fmap snd $ ffilter ((== nid) . fst) e
+
+stRow :: ( Reflex t
+         , DomBuilder t m
+         , PostBuild t m
+         , MonadHold t m
+         ) =>
+         (NID, (Int, ConnState)) -> m ()
+stRow (nid, (rttM, stM)) = do
+  rttD <- fmap (T.pack . show) <$> rttM
+  stD  <- fmap (T.pack . show) <$> stM
+
+  --holdDyn "" (fmap (T.pack . show) $ filterNID nid stE)
+  --rttDyn <- holdDyn "" (fmap (T.pack . show) $ filterNID nid rttE)
+
+  el "tr" $ do el "td" $ text (T.pack $ show nid)
+               el "td" $ dynText stD
+               elAttr "td" ("style" := "align:right") $ dynText rttD
+               el "td" $ text "--"
+
+stTable rxE' rttE stE = do
+  -- Dynamic t [NID]
+  let f nid = ( holdDyn (-1) $ filterNID nid rttE
+              , holdDyn ConnIdle $ filterNID nid stE)
+  stD <- accumDyn (\m (nid, e) -> if connStEnd e
+                                  then M.delete nid m
+                                  else if M.member nid m then m
+                                       else M.insert nid (f nid) m
+                  ) M.empty stE
+
+  e <- el "table" $ do
+         el "tr" $ do el "th" $ text "node"
+                      el "th" $ text "state"
+                      el "th" $ text "RTT(ms)"
+                      el "th" $ text "last active"
+         -- Dynamic [
+         let a = (mapM_ stRow . M.toList) <$> stD
+         b <- dyn a
+         --c <- switchHold never b -- Event t ()
+         return ()
+
+  return ()
+
 renderStatus :: ( Reflex t
                 , DomBuilder t m
                 , DomBuilderSpace m ~ GhcjsDomSpace
@@ -73,5 +119,8 @@ renderStatus mqttD rxE' rttE stE = do
   dynText $ ffor mqttD $ ("MQTT state: " <>) . T.pack . show
 
   el "hr" blank
+
+  --
+  stTable rxE' rttE stE
 
   return ()
