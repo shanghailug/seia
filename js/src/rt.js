@@ -1,5 +1,8 @@
-// update when update seia-VER.js
-VERSION = 2;
+// update when update seia-SEQ.js
+SEQ = 2;
+
+// min seq we can accept
+SEQ_MIN = 1;
 
 function is_nodejs() {
     return (typeof(_rt.cwd) == 'string');
@@ -11,7 +14,10 @@ if (typeof(_rt) != 'object') {
 }
 
 
-_rt.VERSION = VERSION;  // this is RtConf._rt_conf_rt_version
+_rt.SEQ = SEQ;  // this is RtConf._rt_conf_rt_seq
+_rt.SEQ_MIN = SEQ_MIN;
+_rt.SEQ_CURR = -1;
+
 _rt.is_nodejs = is_nodejs;
 
 if (!_rt.is_nodejs()) {

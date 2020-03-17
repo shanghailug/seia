@@ -228,7 +228,8 @@ data RtConf = RtConf
             , _rt_sid :: Maybe Word16
             , _rt_preloader_url :: Text
             , _rt_main_version :: (Int, Int)
-            , _rt_version :: Int
+            , _rt_seq :: Int -- current last seq
+            , _rt_seq_curr :: Int -- current seq actually used
             -- from windw._rt.conf
             , _rt_conf_turn_server :: [Text]
             , _rt_conf_fallback_bootstrap_node :: [NID]

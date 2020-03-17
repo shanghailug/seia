@@ -1,32 +1,34 @@
 /*
-1. first, for <version> from _rt.VERSION to 1, if 'version/seia-<version>' exist, load that one
-2. if not any 'version/seia-<version>' exist, download from remote,
+1. first, for <seq> from _rt.SEQ to _rt.SEQ_MIN, if 'version/seia-<seq>' exist, load that one
+2. if not any 'version/seia-<seq>' exist, download from remote,
   argument url will be 'src' of 'seia-preload.js',
-  so will fetch 'seia-<version>.js' from same dir
+  so will fetch 'seia-<_rt.SEQ>.js' from same dir
+3. set _rt.SEQ_CURR to actually used seia-<seq>
 */
 
 var store = require('./store');
 
-function get_key(ver) {
-    return "version/seia-" + ver;
+function get_key(seq) {
+    return "version/seia-" + seq;
 }
 
 function load_xhr(url, cb) {
-    var ver = _rt.VERSION;
+    var seq = _rt.SEQ;
     var u = new _rt.URL(url);
 
     var p = u.pathname;
     p = p.replace(RegExp("/[^/]*$"),"");
-    u.pathname = p + "/seia-" + ver + ".js";
+    u.pathname = p + "/seia-" + seq + ".js";
 
     var url1 = u.href;
 
-    console.log("fetch seia-%d from %s ...", ver, url1);
+    console.log("fetch seia-%d from %s ...", seq, url1);
 
     function proc_data(data) {
-        var key = get_key(ver);
+        var key = get_key(seq);
         store.set(key, data, function(err) {
             if (!err) {
+                _rt.SEQ_CURR = seq;
                 cb(key);
             }
             else {
@@ -67,25 +69,26 @@ function load_xhr(url, cb) {
     }
 }
 
-function load(url, ver, cb) {
+function load(url, seq, cb) {
     store.init(function() {
-        do_load(url, ver, cb);
+        do_load(url, seq, cb);
     });
 }
 
-function do_load(url, ver, cb) {
-    var key = get_key(ver);
-    console.log("try version %d", ver);
+function do_load(url, seq, cb) {
+    var key = get_key(seq);
+    console.log("try version %d", seq);
 
     store.exist(key, function(e) {
         if (e) {
             console.log("version %d exist, load %s, rt version=%d",
-                        ver, key, _rt.VERSION);
+                        seq, key, _rt.SEQ);
+            _rt.SEQ_CURR = seq;
             cb(key);
         }
         else {
-            if (ver > 1) {
-                setTimeout(function() { do_load(url, ver - 1, cb); }, 0);
+            if (seq > _rt.SEQ_MIN) {
+                setTimeout(function() { do_load(url, seq - 1, cb); }, 0);
             }
             else {
                 load_xhr(url, cb);
