@@ -28,7 +28,12 @@ loader.load(url, rt.VERSION,
             function (key) {
                 if (rt.is_nodejs()) {
                     var path = rt.store.get_path(key);
-                    require(path);
+                    try {
+                        require(path);
+                    }
+                    catch(e) {
+                        console.log(e);
+                    }
                 }
                 else {
                     rt.store.get(key, function(err, res) {
