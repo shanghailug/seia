@@ -100,7 +100,9 @@ stTable rxE' rttE stE = do
            E_rtt nid rtt -> M.update (\x -> Just (x {_node_rtt = rtt})) nid m
            E_cst nid cst ->
                  case (M.member nid m, connStEnd cst) of
-                      (_, True) -> M.delete nid m
+                      (_, True) -> M.update (\x -> Just (x { _node_cst = cst
+                                                           , _node_rtt = -1}))
+                                            nid m
                       (True, False) -> M.update (\x ->
                                                 Just (x {_node_cst = cst})) nid m
                       (False, False) -> M.insert nid (MkNodeState { _node_le = Nothing
