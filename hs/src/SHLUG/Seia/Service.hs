@@ -58,8 +58,8 @@ serviceDOM :: ( Reflex t
               , PostBuild t m
               , WithLogIO m
               ) =>
-              ConnMan t -> m ()
-serviceDOM cm = do
+              (ConnMan t, Dynamic t Int) -> m ()
+serviceDOM (cm, verD) = do
   rtconf <- liftJSM rtConf
   let service = _rt_conf_service rtconf
 
@@ -69,6 +69,7 @@ serviceDOM cm = do
        (renderStatus (_conn_man_mqtt_state cm)
                      (_conn_man_rx' cm)
                      (_conn_man_rtt cm)
-                     (_conn_man_st_e cm))
+                     (_conn_man_st_e cm)
+                     verD)
 
   return ()

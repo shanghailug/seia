@@ -41,6 +41,7 @@ import Control.Monad.IO.Class (liftIO, MonadIO(..))
 import qualified Data.Text as T
 import qualified Data.Map.Strict as M
 
+import Text.Printf
 {-
 
 <mqtt>
@@ -140,13 +141,23 @@ renderStatus :: ( Reflex t
                 ) =>
                 Dynamic t MQTTState ->
                 Event t NID -> Event t (NID, Int) ->
-                Event t (NID, ConnState) -> m ()
-renderStatus mqttD rxE' rttE stE = do
+                Event t (NID, ConnState) ->
+                Dynamic t Int -> m ()
+renderStatus mqttD rxE' rttE stE verD = do
+  rtconf <- liftJSM rtConf
   -- current time
   sec1s <- liftIO getCurrentTime >>= tickLossy 1
   el "p" $
-     holdDyn "-" (ffor sec1s $ ("now: " <>) . T.pack . show . _tickInfo_lastUTC) >>=
-             dynText
+     holdDyn "-" (ffor sec1s $
+                       ("now: " <>) . T.pack . show . _tickInfo_lastUTC) >>=
+                 dynText
+
+
+  el "p" $
+     dynText $ ffor verD $ \v -> T.pack (printf "SEQ: rt %d, curr %d, last %d"
+                                        (_rt_seq rtconf)
+                                        (_rt_seq_curr rtconf)
+                                        v)
 
   -- mqtt state
   el "p" $

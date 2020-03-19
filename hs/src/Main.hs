@@ -89,7 +89,7 @@ app :: ( Reflex t
        , MonadFix m
        , PostBuild t m
        , WithLogIO m
-       ) => m (ConnMan t)
+       ) => m (ConnMan t, Dynamic t Int)
 app = do
   logIOM I "app start"
   isnodejs <- liftJSM isNodeJS
@@ -125,7 +125,7 @@ app = do
          liftIO $ threadDelay 1000
          liftJSM jsRestart
 
-  return connMan
+  return (connMan, verD)
 
 appDOM :: ( Reflex t
           , DomBuilder t m
@@ -141,9 +141,9 @@ appDOM :: ( Reflex t
           , PostBuild t m
           , WithLogIO m
           ) =>
-          ConnMan t -> m ()
-appDOM cm = do
-  serviceDOM cm
+          (ConnMan t, Dynamic t Int) -> m ()
+appDOM (cm, verD) = do
+  serviceDOM (cm, verD)
 
 main :: IO ()
 main = do
