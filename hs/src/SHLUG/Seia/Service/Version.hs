@@ -144,8 +144,12 @@ versionRun = do
   let tick10s' = gate (not <$> current busyD) tick10s
   performEvent_ $ ffor tick10s' $ \_ -> liftIO $ do
     a <- storeExist $ "version/seia-" <> T.pack (show seq)
-    if not a then urlT (seq    , gen_url seq)
-             else urlT (seq + 1, gen_url $ seq + 1)
+    b <- storeExist $ "version/seia-" <> T.pack (show $ seq + 1)
+
+    case (a, b) of
+         (False, _)    -> urlT (seq    , gen_url seq)
+         (True, False) -> urlT (seq + 1, gen_url $ seq + 1)
+         _             -> return ()
 
   performEvent_ $ ffor resE $ \(tag, res) -> do
     case res of
