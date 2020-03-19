@@ -92,6 +92,7 @@ app :: ( Reflex t
        ) => m (ConnMan t)
 app = do
   logIOM I "app start"
+  isnodejs <- liftJSM isNodeJS
 
   rt_conf <- liftJSM rtConf
   logIOM I $ "rt_conf = " `T.append` (T.pack $ show rt_conf)
@@ -115,7 +116,14 @@ app = do
   performEvent_ $ ffor (updated $ _conn_man_mqtt_state connMan) $ \ev ->
     logIOM D $ "mqtt state: " `T.append` (T.pack $ show ev)
 
-  serviceConsole connMan
+  verD <- serviceConsole connMan
+
+  performEvent_ $ ffor (updated verD) $ \seq -> do
+    logIOM I $ "new seq: " <> T.pack (show seq)
+    when (_rt_conf_auto_restart rt_conf) $ do
+         logIOM I $ "restarting..."
+         liftIO $ threadDelay 1000
+         liftJSM jsRestart
 
   return connMan
 

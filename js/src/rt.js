@@ -60,3 +60,7 @@ _rt.conf.service = _rt.conf.service || [];
 if (typeof(_rt.conf.skip_benchmark) == 'undefined') {
     _rt.conf.skip_benchmark = true;
 }
+
+if (typeof(_rt.conf.auto_restart) == 'undefined') {
+    _rt.conf.auto_restart = false;
+}

@@ -11,6 +11,7 @@ module SHLUG.Seia.Rt ( isNodeJS
                      , rtConf
                      , RtConf(..)
                      , sign, verify, seed2sk, sign_verify_benchmark
+                     , jsRestart
                      , storeGet
                      , storeSet
                      , storeRemove
@@ -27,7 +28,7 @@ import Language.Javascript.JSaddle ( JSM(..)
                                    , toJSVal
                                    , ghcjsPure
                                    , jsval
-                                   , js, jss, jsf
+                                   , js, jss, jsf, jsg
                                    , js0, js1, js2
                                    )
 
@@ -130,6 +131,15 @@ foreign import javascript unsafe "$1 instanceof Blob"
 foreign import javascript interruptible
   "$1.arrayBuffer().then($c);"
   js_blob_to_ab :: JSVal -> IO ArrayBuffer
+
+foreign import javascript unsafe "process.exit()"
+  js_nodejs_exit :: IO ()
+
+jsRestart :: JSM ()
+jsRestart = do
+  x <- isNodeJS
+  if x then liftIO js_nodejs_exit
+  else jsg "document" ^. js "location" ^. js0 "reload" >> return ()
 
 js_rt :: JSM JSVal
 js_rt = liftIO _rt
@@ -236,6 +246,7 @@ data RtConf = RtConf
             , _rt_conf_log_level :: [Severity]
             , _rt_conf_service :: [Text]
             , _rt_conf_skip_benchmark :: Bool
+            , _rt_conf_auto_restart :: Bool
             , _rt_mqtt_server :: Text
             } deriving (Eq, Show)
 
@@ -273,6 +284,8 @@ rtConf = do
 
   sb <- fromMaybe True <$> (js_rt ^. js "conf" ^. js "skip_benchmark" >>=
                            fromJSVal)
+  ar <- fromMaybe True <$> (js_rt ^. js "conf" ^. js "auto_restart" >>=
+                           fromJSVal)
 
 
   return $ RtConf { _rt_is_nodejs = is_nodejs
@@ -287,6 +300,7 @@ rtConf = do
                   , _rt_conf_log_level = lv'
                   , _rt_conf_service = sv
                   , _rt_conf_skip_benchmark = sb
+                  , _rt_conf_auto_restart = ar
                   , _rt_mqtt_server = mqtt_server
                   }
 

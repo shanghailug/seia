@@ -41,6 +41,7 @@ if (typeof(process.env.SEIA_LOG_LEVEL) == 'string') {
 }
 
 _rt.conf.skip_benchmark = false;
+_rt.conf.auto_restart = true;
 
 _rt.mqtt = require("mqtt");
 

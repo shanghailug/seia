@@ -6,6 +6,7 @@ module SHLUG.Seia.Service ( serviceConsole
                           ) where
 
 import SHLUG.Seia.Service.Status
+import SHLUG.Seia.Service.Version
 
 import SHLUG.Seia.Rt
 import SHLUG.Seia.Log
@@ -35,12 +36,13 @@ serviceConsole :: ( Reflex t
                   , PostBuild t m
                   , WithLogIO m
                   ) =>
-                  ConnMan t -> m ()
+                  ConnMan t -> m (Dynamic t Int)
 serviceConsole cm = do
   rtconf <- liftJSM rtConf
 
+  verD <- versionRun
   --
-  return ()
+  return verD
 
 serviceDOM :: ( Reflex t
               , DomBuilder t m
