@@ -149,7 +149,7 @@ versionRun = do
     case (a, b) of
          (False, _)    -> urlT (seq    , gen_url seq)
          (True, False) -> urlT (seq + 1, gen_url $ seq + 1)
-         _             -> return ()
+         (True, True)  -> liftIO (seqT (seq + 1))
 
   performEvent_ $ ffor resE $ \(tag, res) -> do
     case res of
