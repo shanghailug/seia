@@ -50,6 +50,10 @@ import Control.Monad (when)
 import Data.Time
 import Text.Printf
 
+import qualified System.IO as IO
+import Control.Concurrent (forkIO)
+
+
 reqSetup :: DOM.XMLHttpRequest -> (Maybe Text -> JSM ()) -> JSM ()
 reqSetup req cb = do
    -- setup event handle
@@ -63,14 +67,19 @@ reqSetup req cb = do
    DOM.on req DOM.timeout $ liftJSM $ cb Nothing
 
    -- setup timeout
-   DOM.setTimeout req 1000
+   -- NOTE: 1000 is 1 sec, not 1000 sec
+   DOM.setTimeout req $ (1000 * 600)
 
    -- setup header, TODO, for gz compress
+   return ()
 
 reqOpen :: DOM.XMLHttpRequest -> Text -> JSM ()
 reqOpen req url = do
-  DOM.openSimple req ("get" :: Text) url
-  DOM.send req
+  DOM.openSimple req ("GET" :: Text) url
+  ctx <- askJSM
+  -- "DOM.send req" will block, why?
+  liftIO $ forkIO $ runJSM (DOM.send req) ctx
+  return ()
 
 xhr :: ( Reflex t
        , TriggerEvent t m
