@@ -101,7 +101,8 @@ app = do
   logIOM I $ "conf = " `T.append` (T.pack $ show t')
 
   let (UID pk) = getUID $ _conf_nid t
-  liftIO $ sign_verify_benchmark (_conf_priv_key t, pk) 1000
+  when (not $ _rt_conf_skip_benchmark rt_conf) $
+       liftIO $ sign_verify_benchmark (_conf_priv_key t, pk) 1000
 
   --liftIO $ msgTrivalTest (_conf_nid t) (_conf_priv_key t)
   --mqttLoopbackTest

@@ -55,3 +55,8 @@ _rt.conf.log_level = _rt.conf.log_level || [
 ];
 
 _rt.conf.service = _rt.conf.service || [];
+
+// default skip benchmakr
+if (typeof(_rt.conf.skip_benchmark) == 'undefined') {
+    _rt.conf.skip_benchmark = true;
+}

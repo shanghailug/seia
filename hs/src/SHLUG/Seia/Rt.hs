@@ -235,6 +235,7 @@ data RtConf = RtConf
             , _rt_conf_fallback_bootstrap_node :: [NID]
             , _rt_conf_log_level :: [Severity]
             , _rt_conf_service :: [Text]
+            , _rt_conf_skip_benchmark :: Bool
             , _rt_mqtt_server :: Text
             } deriving (Eq, Show)
 
@@ -270,6 +271,10 @@ rtConf = do
   seq <- fromMaybe 1 <$> (js_rt ^. js "SEQ" >>= fromJSVal)
   seq_curr <- fromMaybe 1 <$> (js_rt ^. js "SEQ_CURR" >>= fromJSVal)
 
+  sb <- fromMaybe True <$> (js_rt ^. js "conf" ^. js "skip_benchmark" >>=
+                           fromJSVal)
+
+
   return $ RtConf { _rt_is_nodejs = is_nodejs
                   , _rt_sid = if sid' < 0 then Nothing else Just (toEnum sid')
                   , _rt_preloader_url = fromJSString url
@@ -281,6 +286,7 @@ rtConf = do
                   , _rt_conf_fallback_bootstrap_node = bn
                   , _rt_conf_log_level = lv'
                   , _rt_conf_service = sv
+                  , _rt_conf_skip_benchmark = sb
                   , _rt_mqtt_server = mqtt_server
                   }
 

@@ -32,11 +32,15 @@ _rt.JSON = JSON;
 _rt.cwd = process.cwd();
 _rt.sid = 0; // TODO from args
 
+// init _rt.conf
+_rt.conf = _rt.conf || {};
+
 // log_level
 if (typeof(process.env.SEIA_LOG_LEVEL) == 'string') {
-    _rt.conf = _rt.conf || {};
     _rt.conf.log_level = process.env.SEIA_LOG_LEVEL.split(":");
 }
+
+_rt.conf.skip_benchmark = false;
 
 _rt.mqtt = require("mqtt");
 
