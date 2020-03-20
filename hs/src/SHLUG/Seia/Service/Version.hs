@@ -14,6 +14,7 @@ every 10 sec
 
 import SHLUG.Seia.Rt
 import SHLUG.Seia.Log
+import SHLUG.Seia.Helper
 
 import qualified GHCJS.DOM as DOM
 import qualified GHCJS.DOM.Types as DOM
@@ -77,7 +78,11 @@ reqSetup req cb = do
 
 reqOpen :: DOM.XMLHttpRequest -> Text -> JSM ()
 reqOpen req url = do
-  DOM.openSimple req ("GET" :: Text) url
+  ts <- liftIO getEpochMs >>= (pure . T.pack . show)
+  let url' = if T.any (== '?') url
+             then url <> "&" <> ts
+             else url <> "?" <> ts
+  DOM.openSimple req ("GET" :: Text) url'
   ctx <- askJSM
   -- "DOM.send req" will block, why?
   liftIO $ forkIO $ runJSM (DOM.send req) ctx
@@ -124,6 +129,9 @@ xhr tag0 urlE = do
 
   return (resE, busyD)
 
+check :: Text -> Bool
+check x = any (T.isPrefixOf "h$main(") $ T.lines x
+
 versionRun :: ( Reflex t
               , TriggerEvent t m
               , MonadSample t m
@@ -165,9 +173,13 @@ versionRun = do
   performEvent_ $ ffor resE $ \(tag, res) -> do
     case res of
       Just x -> do logIOM D $ T.pack $ printf "version: get 'seia-%d'" tag
-                   liftJSM $ storeSet ("version/seia-" <> T.pack (show tag))
-                                      (encodeUtf8 x)
-                   liftIO (seqT tag)
+
+                   if check x
+                   then do liftJSM $ storeSet ("version/seia-" <> T.pack (show tag))
+                                              (encodeUtf8 x)
+                           liftIO (seqT tag)
+                   else logIOM D $ "version: xhr data broken, drop"
+
                    return ()
       _ -> return ()
 
