@@ -109,7 +109,7 @@ function load_xhr(url, cb) {
             if (req.readyState === 4) {
                 if (req.status === 200) {
                     var data = req.response;
-                    var str = String.fromCharCode.apply(null, data);
+                    var str = String.fromCharCode.apply(null, new Uint8Array(data));
 
                     if (new RegExp("\\nh\\$main\\(").test(str)) {
                         proc_data(new Uint8Array(data));
