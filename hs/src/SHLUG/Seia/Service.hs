@@ -70,6 +70,7 @@ serviceDOM (cm, verD) = do
                      (_conn_man_rx' cm)
                      (_conn_man_rtt cm)
                      (_conn_man_st_e cm)
+                     (_conn_man_route_table cm)
                      verD)
 
   return ()

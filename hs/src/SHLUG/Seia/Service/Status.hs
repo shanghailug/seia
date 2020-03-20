@@ -5,7 +5,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# Language TypeFamilies #-}
 {-# Language RecursiveDo  #-}
-
+{-# language TupleSections #-}
 
 module SHLUG.Seia.Service.Status (renderStatus) where
 
@@ -16,6 +16,7 @@ import SHLUG.Seia.Log
 
 import SHLUG.Seia.Network.MQTT(MQTTState(..))
 import SHLUG.Seia.Network.Conn(ConnState(..), connStEnd)
+import SHLUG.Seia.Network.Route(RouteEntry(..))
 
 import Reflex
 import Reflex.Dom.Core
@@ -40,8 +41,14 @@ import Control.Monad.IO.Class (liftIO, MonadIO(..))
 
 import qualified Data.Text as T
 import qualified Data.Map.Strict as M
+import Data.Map.Strict (Map(..))
 
 import Text.Printf
+
+import Data.List(intercalate)
+
+import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
+
 {-
 
 <mqtt>
@@ -125,6 +132,34 @@ stTable rxE' rttE stE = do
 
   return ()
 
+rtblRow (nid, entry) = do
+  let f1 x = T.pack $ show $ posixSecondsToUTCTime $ fromIntegral x / 1000
+  let f2 tp prefix (nid, ts) =
+         el "tr" $ do el "td" $ text tp
+                      el "td" $ text $ prefix <> (T.pack $ show nid)
+                      case ts of
+                           Nothing -> el "td" $ text ""
+                           Just x  -> el "td" $ text $ f1 x
+
+  let l = map (, Just $ _re_ts  entry) (_re_nid  entry) ++
+          map (, Just $ _re_ts' entry) (_re_nid' entry)
+
+  f2 "*" "" (nid, Nothing)
+  mapM_ (f2 "" "\xa0\xa0") l
+
+  return ()
+
+rtblTable rtblE = do
+  rtblD <- holdDyn M.empty rtblE
+  e <- el "table" $ do
+          el "tr" $ do el "th" $ text ""
+                       el "th" $ text "node"
+                       el "th" $ text "last OGM"
+          let a = (mapM rtblRow . M.toList) <$> rtblD
+          dyn_ a
+  return ()
+
+
 renderStatus :: ( Reflex t
                 , DomBuilder t m
                 , DomBuilderSpace m ~ GhcjsDomSpace
@@ -142,8 +177,9 @@ renderStatus :: ( Reflex t
                 Dynamic t MQTTState ->
                 Event t NID -> Event t (NID, Int) ->
                 Event t (NID, ConnState) ->
+                Behavior t (Map NID RouteEntry) ->
                 Dynamic t Int -> m ()
-renderStatus mqttD rxE' rttE stE verD = do
+renderStatus mqttD rxE' rttE stE rtblB verD = do
   rtconf <- liftJSM rtConf
   -- current time
   sec1s <- liftIO getCurrentTime >>= tickLossy 1
@@ -165,5 +201,13 @@ renderStatus mqttD rxE' rttE stE verD = do
 
   --
   el "p" $ stTable rxE' rttE stE
+
+  --
+  sec5s <- liftIO getCurrentTime >>= tickLossy 5
+  btnE <- button "refresh"
+
+  let rtblE = tag rtblB $ leftmost [btnE, ffor sec5s (const ())]
+
+  el "p" $ rtblTable rtblE
 
   return ()
