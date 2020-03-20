@@ -70,7 +70,9 @@ reqSetup req cb = do
    -- NOTE: 1000 is 1 sec, not 1000 sec
    DOM.setTimeout req $ (1000 * 600)
 
-   -- setup header, TODO, for gz compress
+   -- accept-encoding is controlled by browser automatically
+   DOM.setResponseType req Enums.XMLHttpRequestResponseTypeText
+
    return ()
 
 reqOpen :: DOM.XMLHttpRequest -> Text -> JSM ()
