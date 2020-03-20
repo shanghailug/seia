@@ -153,7 +153,7 @@ module.exports.load = load;
 
 },{"./store":6}],3:[function(require,module,exports){
 // update when update seia-SEQ.js
-SEQ = 4;
+SEQ = 5;
 
 // min seq we can accept
 SEQ_MIN = 1;
@@ -213,6 +213,10 @@ _rt.conf.service = _rt.conf.service || [];
 // default skip benchmakr
 if (typeof(_rt.conf.skip_benchmark) == 'undefined') {
     _rt.conf.skip_benchmark = true;
+}
+
+if (typeof(_rt.conf.auto_restart) == 'undefined') {
+    _rt.conf.auto_restart = false;
 }
 
 },{"./store":6}],4:[function(require,module,exports){
