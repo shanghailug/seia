@@ -153,10 +153,10 @@ module.exports.load = load;
 
 },{"./store":6}],3:[function(require,module,exports){
 // update when update seia-SEQ.js
-SEQ = 6;
+SEQ = 7;
 
 // min seq we can accept
-SEQ_MIN = 1;
+SEQ_MIN = 7;
 
 function is_nodejs() {
     return (typeof(_rt.cwd) == 'string');
