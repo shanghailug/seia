@@ -91,6 +91,8 @@ app :: ( Reflex t
        , WithLogIO m
        ) => m (ConnMan t, Dynamic t Int)
 app = do
+  liftJSM $ rtInit
+
   logIOM I "app start"
   isnodejs <- liftJSM isNodeJS
 

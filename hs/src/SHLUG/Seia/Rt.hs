@@ -3,6 +3,7 @@
 
 module SHLUG.Seia.Rt ( isNodeJS
                      , js_rt
+                     , rtInit
                      , consoleLog
                      , bs_to_u8a
                      , u8a_to_bs
@@ -313,6 +314,14 @@ foreign import javascript unsafe "_rt.rust_crypto_ed25519.verify($1,$2,$3)"
 
 foreign import javascript unsafe "_rt.rust_crypto_ed25519.keypair($1)"
   js_rust_crypto_keypair :: Uint8Array -> IO Uint8Array
+
+foreign import javascript interruptible "_rt.rust_crypto_ed25519_init($c);"
+  js_rust_crypto_init :: IO ()
+
+rtInit :: JSM ()
+rtInit = do
+  liftIO js_rust_crypto_init
+  return ()
 
 seed2sk :: ByteString -> ByteString
 seed2sk seed = unsafePerformIO $ do

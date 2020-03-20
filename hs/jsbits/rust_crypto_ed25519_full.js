@@ -1,4 +1,4 @@
-(function (){
+_rt.rust_crypto_ed25519_init = function (rdy) {
 let imports = {};
 let wasm;
 if (typeof(module) == "undefined") {
@@ -2601,11 +2601,17 @@ const bytes = dec64(bytes64);
 //module.exports.bytes64 = bytes64;
 module.exports.dec64 = dec64;
 
+/*
 const wasmModule = new WebAssembly.Module(bytes);
-const wasmInstance = new WebAssembly.Instance(wasmModule, imports);
+*/
+WebAssembly.compile(bytes).then(
+    mod => {
+        const wasmInstance = new WebAssembly.Instance(mod, imports);
+        wasm = wasmInstance.exports;
+        module.exports.__wasm = wasm;
 
-wasm = wasmInstance.exports;
-module.exports.__wasm = wasm;
+        _rt.rust_crypto_ed25519 = module.exports;
 
-_rt.rust_crypto_ed25519 = module.exports;
-})()
+        rdy();
+    })
+}

@@ -1,5 +1,5 @@
 // update when update seia-SEQ.js
-SEQ = 3;
+SEQ = 5;
 
 // min seq we can accept
 SEQ_MIN = 1;
