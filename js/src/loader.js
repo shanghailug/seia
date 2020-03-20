@@ -57,7 +57,18 @@ function load_xhr(url, cb) {
             if (req.readyState === 4) {
                 if (req.status === 200) {
                     var data = req.response;
-                    proc_data(new Uint8Array(data));
+                    var u8a = new Uint8Array(data);
+                    // avoid too long, we only need only last part
+                    var str = String.fromCharCode.apply(null,
+                                                        u8a.subarray(u8a.length - 256,
+                                                                     u8a.length));
+
+                    if (new RegExp("\\nh\\$main\\(").test(str)) {
+                        proc_data(u8a);
+                    }
+                    else {
+                        throw ("Invalid data");
+                    }
                 }
                 else {
                     throw ("GET fail, status=" + req.status);
