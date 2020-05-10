@@ -207,8 +207,8 @@ _rt.conf.turn_server = _rt.conf.turn_server || [
 ];
 
 _rt.conf.bootstrap_node = _rt.conf.bootstrap_node || [
-    "kgczbhhdrwopyu84a9foy66amepymc8kofaqry6s3t3y9dqmeseo:0",
     "9dp3gc3r7gngw3xhcs69bwyj3xaa75zodx5huw7rksyjs8in9qyy:0",
+    "ufewe4743xiyjygor3h8f4rbgs4b489efh9spdn38c6pns5gyaty:0",
     "d531szhkbbjbd6q716mraz8qamji8akyyu17up8gbe731qtiw66y:0"
 ];
 
