@@ -158,11 +158,11 @@ data ConfConst = MkConfConst { _cc_conn_req_timeout :: Int
                              , _cc_mqtt_heartbeat_interval :: Int
                              }
 
-confConst = MkConfConst { _cc_conn_req_timeout       = 10
-                        , _cc_conn_signal_timeout    = 30
-                        , _cc_conn_heartbeat_timeout = 6.0 -- 2.0 sec
+confConst = MkConfConst { _cc_conn_req_timeout       = 20
+                        , _cc_conn_signal_timeout    = 60
+                        , _cc_conn_heartbeat_timeout = 15.0 -- 2.0 sec
                         , _cc_cm_ogm_interval        = 20
-                        , _cc_cm_ogm_timeout         = 25 -- 5 + _cc_cm_ogm_interval
+                        , _cc_cm_ogm_timeout         = 30 -- 10 + _cc_cm_ogm_interval
                         , _cc_mqtt_heartbeat_interval = 10
                         , _cc_mqtt_heartbeat_timeout = 15
                         }
