@@ -2604,10 +2604,9 @@ module.exports.dec64 = dec64;
 /*
 const wasmModule = new WebAssembly.Module(bytes);
 */
-WebAssembly.compile(bytes).then(
-    mod => {
-        const wasmInstance = new WebAssembly.Instance(mod, imports);
-        wasm = wasmInstance.exports;
+WebAssembly.instantiate(bytes, imports).then(
+    result => {
+        wasm = result.instance.exports;
         module.exports.__wasm = wasm;
 
         _rt.rust_crypto_ed25519 = module.exports;
