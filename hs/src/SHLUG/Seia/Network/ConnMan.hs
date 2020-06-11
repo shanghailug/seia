@@ -69,6 +69,9 @@ import Language.Javascript.JSaddle ( JSM(..), MonadJSM(..)
                                    , liftJSM
                                    )
 
+import GHC.Stack ( HasCallStack, CallStack, callStack, getCallStack, popCallStack
+                 , withFrozenCallStack)
+
 {-
 ConnMan
 
@@ -166,7 +169,7 @@ connManNew c = do
   let mqtt_stateD = _mqtt_state mqtt
 
   logEnv <- ask
-  let logJSM = logIOM' logEnv
+  let logJSM sev msg = logIOM' logEnv sev msg
 
   ------------------------ event & behavior declare
 

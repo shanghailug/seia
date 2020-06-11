@@ -47,6 +47,8 @@ import Data.IORef
 import qualified Data.Text as T
 import Data.Maybe (isNothing, isJust, fromJust)
 
+import GHC.Stack ( HasCallStack )
+
 import qualified System.IO as IO
 
 import Text.Printf
@@ -153,13 +155,13 @@ type LogJSM = LogIOM JSM
 connDummy :: Conn
 connDummy = MkConn (const (return ())) (const (return ()))
 
-promiseH0 :: (MonadCatch m, DOM.MonadJSM m) => DOM.PromiseRejected -> m (Maybe a)
+promiseH0 :: (MonadCatch m, MonadJSM m) => DOM.PromiseRejected -> m (Maybe a)
 promiseH0 e = do
   DOM.liftJSM $ consoleLog ("promise rejected", DOM.rejectionReason e)
   return Nothing
 
 -- this can not catch JSException, why ?
-jsexceptionH0 :: (MonadCatch m, DOM.MonadJSM m) => JSException -> m (Maybe a)
+jsexceptionH0 :: (MonadCatch m, MonadJSM m) => JSException -> m (Maybe a)
 jsexceptionH0 e = do
   DOM.liftJSM $ consoleLog ("js exception", show e)
   return Nothing
@@ -181,7 +183,7 @@ peerConnCfg ts = do
 
     toJSVal res
 
-createConnection :: ConnConf ->
+createConnection :: HasCallStack => ConnConf ->
                     LogJSM ->
                     IORef ConnState ->
                     IORef (Maybe DOM.RTCPeerConnection) ->
@@ -189,11 +191,15 @@ createConnection :: ConnConf ->
                     IORef Int64 ->
                     Maybe JSVal -> JSM ()
 createConnection c logJSM stRef pcRef dcRef tsRef remoteSdp = do
+  logJSM D $ T.pack $ printf "--- t1"
   pc <- peerConnCfg (_conn_turn_server c) >>=
         new (js_rt ^. js "RTCPeerConnection") >>=
         (return . DOM.RTCPeerConnection)
+  logJSM I $ T.pack $ printf ">>> pc create"
   let isOffer = isNothing remoteSdp
   liftIO $ atomicWriteIORef pcRef (Just pc)
+
+  logJSM D $ T.pack $ printf "--- t2"
 
   DOM.on pc DOM.iceCandidate $ do
     e <- DOM.event
@@ -234,45 +240,47 @@ createConnection c logJSM stRef pcRef dcRef tsRef remoteSdp = do
                          printf "%s: conn state %s"
                                 (sss 8 $ _conn_remote c) (show st)
 
-
+  logJSM D $ T.pack $ printf "--- t3"
   dc' <- if isOffer
          then Just <$> DOM.createDataChannel pc "ch0" Nothing
          else return Nothing
-
+  logJSM D $ T.pack $ printf "--- t4"
   -- NOTE: should set remote sdp before answer
   forM_ remoteSdp $ \x -> DOM.setRemoteDescription pc $ DOM.RTCSessionDescriptionInit x
-
+  logJSM D $ T.pack $ printf "--- t5"
   --consoleLog $ connMap ^. js remotePeer
 
-  -- TODO, create ans & off is promise
+  -- TODO, create ans & off is promise, here will reject(actual happen)
+  -- Need catch js exception
   sdp <- if isJust remoteSdp
          then DOM.createAnswer pc Nothing
          else DOM.createOffer pc Nothing
-
+  logJSM D $ T.pack $ printf "--- t6"
   --consoleLog sdp
 
   --- TODO, this is promise, maybe reject
   DOM.setLocalDescription pc sdp
   sdp' <- strToText <$> (js_rt ^. js "JSON"  ^. js1 "stringify" sdp >>= valToStr)
-
+  logJSM D $ T.pack $ printf "--- t7"
   -- insert dc, should insert after last function
   -- which throw PromiseRejected exception
   mapM_ (setupDataChannel c logJSM stRef pcRef dcRef tsRef) dc'
-
+  logJSM D $ T.pack $ printf "--- t8"
   if isJust remoteSdp
   then sendRTCMsg c $ MkRTCSignal RTCAnswer sdp'
   else sendRTCMsg c $ MkRTCSignal RTCOffer sdp'
 
-checkDC :: ConnConf -> LogJSM -> IORef ConnState -> DOM.RTCDataChannel ->
+checkDC :: HasCallStack =>
+           ConnConf -> LogJSM -> IORef ConnState -> DOM.RTCDataChannel ->
            JSM ()
 checkDC c logJSM stRef dc = do
   st <- RTCDataChannel.getReadyState dc
   when (st == Enums.RTCDataChannelStateOpen) $
-    updateSt c stRef undefined $ ConnReady (_conn_type c)
+    updateSt c logJSM stRef undefined $ ConnReady (_conn_type c)
   logJSM D $ T.pack $ printf "dc st -> %s" (show st)
   return ()
 
-onRTCRx :: ConnConf ->
+onRTCRx :: HasCallStack => ConnConf ->
            LogJSM ->
            IORef ConnState ->
            IORef (Maybe DOM.RTCPeerConnection) ->
@@ -287,16 +295,16 @@ onRTCRx c logJSM stRef pcRef dcRef tsRef (epoch, msg) = do
   case (msg, tp) of
     (MkRTCReq ver, ConnIsServer) ->
       if ver /= _conn_main_ver c
-      then do updateSt c stRef pcRef ConnFail
+      then do updateSt c logJSM stRef pcRef ConnFail
               sendRTCMsg c (MkRTCRes RTCMsgResIncompatiable)
-      else do updateSt c stRef pcRef ConnSignal
+      else do updateSt c logJSM stRef pcRef ConnSignal
               sendRTCMsg c (MkRTCRes if _conn_nid_exist c
                                      then RTCMsgResExist else RTCMsgResOK)
     (MkRTCRes res, ConnIsClient) ->
       if res == RTCMsgResIncompatiable -- TODO, check ResExist
-      then do updateSt c stRef pcRef ConnFail
+      then do updateSt c logJSM stRef pcRef ConnFail
               logJSM W $ T.pack $ "rtc req fail: " ++ show res
-      else do updateSt c stRef pcRef ConnSignal
+      else do updateSt c logJSM stRef pcRef ConnSignal
               createConnection c logJSM stRef pcRef dcRef tsRef Nothing
 
     (MkRTCSignal tp str, _) ->
@@ -317,14 +325,15 @@ onRTCRx c logJSM stRef pcRef dcRef tsRef (epoch, msg) = do
              catch (DOM.addIceCandidate pc (DOM.RTCIceCandidate jv))
                    (fmap (const ()) . promiseH0)
            _ -> do logJSM W $ T.pack $ "pc is not exist or connection type incorrect"
-                   updateSt c stRef pcRef ConnFail
+                   updateSt c logJSM stRef pcRef ConnFail
 
     _ -> logJSM W $ T.pack "wrong type of message"
 
   return ()
 
 
-procMsg :: ConnConf -> LogJSM -> JSVal -> DOM.RTCDataChannel -> UTCTime ->
+procMsg :: HasCallStack =>
+           ConnConf -> LogJSM -> JSVal -> DOM.RTCDataChannel -> UTCTime ->
            IORef Int64 -> IORef Int64 -> ByteString -> JSM ()
 procMsg c logJSM pkt dc t0 tsRef hbRef payload = do
   -- update timestamp
@@ -359,7 +368,8 @@ procMsg c logJSM pkt dc t0 tsRef hbRef payload = do
                   _conn_rx_cb c $ (msg, payload)
 
 -- TODO, check first message with 2 x N tolerantion, then 1 x N
-heartbeatChecker :: JSVal -> ConnConf ->
+heartbeatChecker :: HasCallStack =>
+                    JSVal -> ConnConf ->
                     LogJSM ->
                     IORef ConnState ->
                     IORef (Maybe DOM.RTCPeerConnection) ->
@@ -382,21 +392,22 @@ heartbeatChecker pkt c logJSM stRef pcRef tsRef dc = do
   ts <- liftIO $ readIORef tsRef
 
   if now - ts > floor (_cc_conn_heartbeat_timeout confConst * 1000)
-  then updateSt c stRef pcRef ConnTimeout
+  then updateSt c logJSM stRef pcRef ConnTimeout
   else heartbeatChecker pkt c logJSM stRef pcRef tsRef dc
 
-sendJSVal :: JSVal -> DOM.RTCDataChannel -> JSM ()
+sendJSVal :: HasCallStack => JSVal -> DOM.RTCDataChannel -> JSM ()
 sendJSVal pkt dc = do
   catch (RTCDataChannel.sendView dc (DOM.ArrayBufferView pkt))
         (fmap (const ()) . exceptionH0' True)
 
-heartbeatPkt :: JSM JSVal
+heartbeatPkt :: HasCallStack => JSM JSVal
 heartbeatPkt = do
   let bs = toStrict $ encode $ MsgHeartbeat
   u8a <- bs_to_u8a bs
   u8a_to_jsval u8a
 
-setupDataChannel :: ConnConf ->
+setupDataChannel :: HasCallStack =>
+                    ConnConf ->
                     LogJSM ->
                     IORef ConnState ->
                     IORef (Maybe DOM.RTCPeerConnection) ->
@@ -410,7 +421,7 @@ setupDataChannel c logJSM stRef pcRef dcRef tsRef dc = do
   hbRef <- newIORef 0
 
   DOM.on dc RTCDataChannel.open $ do
-    liftJSM $ updateSt c stRef pcRef (ConnReady (_conn_type c))
+    liftJSM $ updateSt c logJSM stRef pcRef (ConnReady (_conn_type c))
     t <- liftIO $ getEpochMs -- Int
     liftIO $ atomicWriteIORef tsRef t
     liftJSM $ logJSM I $ T.pack $ printf "%s: data channel open" (show nid)
@@ -439,14 +450,15 @@ setupDataChannel c logJSM stRef pcRef dcRef tsRef dc = do
     liftJSM $ logJSM W $ T.pack $ printf "%s: data channel err" (show nid)
 
   DOM.on dc RTCDataChannel.closeEvent $ do
-    liftJSM $ updateSt c stRef pcRef ConnFail
+    liftJSM $ updateSt c logJSM stRef pcRef ConnFail
     liftJSM $ logJSM I $ T.pack $ printf "%s: data channel closed" (show nid)
 
   liftIO $ atomicWriteIORef dcRef (Just dc)
 
   return ()
 
-onTx :: ConnConf -> LogJSM -> IORef (Maybe DOM.RTCDataChannel) ->
+onTx :: HasCallStack =>
+        ConnConf -> LogJSM -> IORef (Maybe DOM.RTCDataChannel) ->
         ByteString -> JSM ()
 onTx c logJSM dcRef payload = do
   u8a <- bs_to_u8a payload
@@ -466,7 +478,7 @@ onTx c logJSM dcRef payload = do
 
   return ()
 
-sendRTCMsg :: ConnConf -> RTCMsg -> JSM ()
+sendRTCMsg :: HasCallStack => ConnConf -> RTCMsg -> JSM ()
 sendRTCMsg c rmsg = do
   let msg = MsgSigned { _msg_src = _conn_local c
                       , _msg_dst = _conn_remote c
@@ -480,19 +492,21 @@ sendRTCMsg c rmsg = do
   let msg2 = msg1 { _msg_sign = sig }
   (_conn_rx_cb c) (msg2, dat)
 
-updateSt :: ConnConf -> IORef ConnState ->
+updateSt :: HasCallStack => ConnConf -> LogJSM -> IORef ConnState ->
             IORef (Maybe DOM.RTCPeerConnection) -> ConnState -> JSM ()
-updateSt c stRef pcRef st = do
+updateSt c logJSM stRef pcRef st = do
   -- avoid race condition
   old <- liftIO $ atomicModifyIORef' stRef
                                      (\x -> if stEnd x then (x, x) else (st, x))
   unless (stEnd old) $ do
          when (stEnd st) $ do
               pc' <- liftIO $ atomicModifyIORef' pcRef (\x -> (Nothing, x))
-              mapM_ RTCPeerConnection.close pc'
+              mapM_ (\pc -> do logJSM I $ T.pack ">>> pc close"
+                               RTCPeerConnection.close pc
+                    ) pc'
          _conn_st_cb c $ st
 
-connNew :: (MonadJSM m) => ConnConf -> LogJSM -> m Conn
+connNew :: (MonadJSM m, HasCallStack) => ConnConf -> LogJSM -> m Conn
 connNew c logJSM = do
   pcRef <- liftIO $ newIORef Nothing
   dcRef <- liftIO $ newIORef Nothing
@@ -506,7 +520,7 @@ connNew c logJSM = do
                                        (show $ _conn_remote c)
 
   -- NOTE, before return, all updateSt to outside will drop
-  liftJSM $ updateSt c stRef pcRef ConnIdle
+  liftJSM $ updateSt c logJSM stRef pcRef ConnIdle
 
   -- init rtc request to remote node
   when (_conn_type c == ConnIsClient) $
@@ -517,7 +531,7 @@ connNew c logJSM = do
   -- or there will be race condition.
   ctx <- liftJSM askJSM
   liftIO $ forkIO $ do
-    let timeout = do runJSM (updateSt c stRef pcRef ConnTimeout) ctx
+    let timeout = do runJSM (updateSt c logJSM stRef pcRef ConnTimeout) ctx
                      myThreadId >>= killThread
 
     -- should become ConnSignal within 10sec
