@@ -195,7 +195,7 @@ createConnection c logJSM stRef pcRef dcRef tsRef remoteSdp = do
   pc <- peerConnCfg (_conn_turn_server c) >>=
         new (js_rt ^. js "RTCPeerConnection") >>=
         (return . DOM.RTCPeerConnection)
-  logJSM I $ T.pack $ printf ">>> pc create"
+  logJSM I $ T.pack $ printf ">>> pc create: %s" (sss 8 $ _conn_remote c)
   let isOffer = isNothing remoteSdp
   liftIO $ atomicWriteIORef pcRef (Just pc)
 
@@ -498,10 +498,15 @@ updateSt c logJSM stRef pcRef st = do
   -- avoid race condition
   old <- liftIO $ atomicModifyIORef' stRef
                                      (\x -> if stEnd x then (x, x) else (st, x))
+  logJSM D $ T.pack $ printf "webrtc:st:%s -> %s => %s" (sss 8 $ _conn_remote c)
+                             (show old) (show st)
   unless (stEnd old) $ do
          when (stEnd st) $ do
+              logJSM I $ T.pack $ printf ">>> pc cleanup: %s"
+                                         (sss 8 $ _conn_remote c)
               pc' <- liftIO $ atomicModifyIORef' pcRef (\x -> (Nothing, x))
-              mapM_ (\pc -> do logJSM I $ T.pack ">>> pc close"
+              mapM_ (\pc -> do logJSM I $ T.pack $ printf ">>> pc close: %s"
+                                                          (sss 8 $ _conn_remote c)
                                RTCPeerConnection.close pc
                     ) pc'
          _conn_st_cb c $ st
