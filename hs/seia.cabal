@@ -22,7 +22,7 @@ executable seia
 
   build-depends:       base ^>=4.12.0.0, bytestring ^>=0.10.8.2, 
                        transformers, mtl,
-                       text, lens, time,
+                       text, lens, time, stm,
                        aeson, containers,
                        exceptions,
                        eccrypto,

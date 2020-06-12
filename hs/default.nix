@@ -1,8 +1,8 @@
 { mkDerivation, aeson, base, base32-z-bytestring, binary
 , bytestring, co-log, co-log-core, containers, eccrypto, exceptions
 , ghcjs-base, ghcjs-dom, ghcjs-prim, jsaddle, lens, mtl, random
-, reflex, reflex-basic-host, reflex-dom-core, stdenv, text, time
-, transformers, unicode-show, utf8-string
+, reflex, reflex-basic-host, reflex-dom-core, stdenv, stm, text
+, time, transformers, unicode-show, utf8-string
 }:
 mkDerivation {
   pname = "seia";
@@ -14,7 +14,7 @@ mkDerivation {
     aeson base base32-z-bytestring binary bytestring co-log co-log-core
     containers eccrypto exceptions ghcjs-base ghcjs-dom ghcjs-prim
     jsaddle lens mtl random reflex reflex-basic-host reflex-dom-core
-    text time transformers unicode-show utf8-string
+    stm text time transformers unicode-show utf8-string
   ];
   license = stdenv.lib.licenses.gpl3;
 }

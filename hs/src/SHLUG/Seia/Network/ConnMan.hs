@@ -171,6 +171,8 @@ connManNew c = do
   logEnv <- ask
   let logJSM sev msg = logIOM' logEnv sev msg
 
+  -- start conn proc thread
+  connInit logJSM
   ------------------------ event & behavior declare
 
   -- msg collect from Conn or MQTT, verified
