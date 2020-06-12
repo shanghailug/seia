@@ -481,6 +481,7 @@ sendCmdIO nid cmd = atomically $ writeTChan _cmdChan (nid, cmd)
 sendCmdJSM :: NID -> Cmd -> JSM ()
 sendCmdJSM nid cmd = liftIO $ sendCmdIO nid cmd
 
+-- TODO: make outside directly observe 'Map NID ConnEntry'
 connRun :: (HasCallStack) =>
            JSContextRef -> Map NID ConnEntry ->
            TChan (NID, Cmd) -> LogJSM -> JSM ()
@@ -508,6 +509,10 @@ connRun ctx m ch logJSM = do
 
               let ent = MkConnEntry c Nothing Nothing ConnIdle t0 (-1) 0
               let m' = Map.insert nid ent m
+
+              -- should updateSt, make outside known connection exist
+              updateSt ent logJSM ConnIdle
+
               connRun ctx m' ch logJSM
 
         (Just ent, _) -> do
