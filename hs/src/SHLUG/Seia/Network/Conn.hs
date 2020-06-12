@@ -339,16 +339,19 @@ onRTCRx ent logJSM (epoch, msg) = do
               ent'' <- createConnection ent' logJSM Nothing
               return $ Just ent''
 
-    (MkRTCSignal tp str, _, _) ->
+    (MkRTCSignal tp str, _, ConnSignal) ->
       do --- NOTE, wrtc will throw exception for null, "", {}
          jv <- js_rt ^. js "JSON" ^. js1 "parse" str
          when (str == T.pack "null") $ consoleLog jv
 
          case (tp, pc', _conn_type c) of
-           (RTCOffer,  _, ConnIsServer) -> do
+           (RTCOffer,  Nothing, ConnIsServer) -> do
              logJSM D $ T.pack $ printf "webrtc:off:%s -> %s" rstr str
              ent' <- createConnection ent logJSM (Just jv)
              return $ Just ent'
+
+           -- ignore redundant offer
+           (RTCOffer,  Just _, ConnIsServer) -> return (Just ent)
 
            (RTCAnswer, Just pc, ConnIsClient) -> do
              logJSM D $ T.pack $ printf "webrtc:ans:%s -> %s" rstr str
