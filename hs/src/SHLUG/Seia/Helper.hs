@@ -4,7 +4,7 @@ import Data.Time.Clock.POSIX (getPOSIXTime)
 
 -- show short string
 sss :: Show a => Int -> a -> String
-sss l x = if length a <= l then a else take (l - 4) a ++ " ..." where
+sss l x = if length a <= l then a else take l a where
   a = show x
 
 getEpochMs :: Integral a => IO a
