@@ -45,7 +45,7 @@ import Control.Monad (when, unless, forM_)
 
 import Control.Monad.Trans.Maybe (runMaybeT, MaybeT(..))
 
-import Control.Concurrent (forkIO, threadDelay, myThreadId, killThread)
+import Control.Concurrent (forkIO, threadDelay, myThreadId, killThread, ThreadId)
 import Control.Concurrent.STM.TChan
 
 import Data.IORef
@@ -430,13 +430,7 @@ updateSt ent logJSM st = do
   logJSM D $ T.pack $ printf "webrtc:st:%s -> %s => %s" (sss 8 $ _conn_remote c)
                              (show old) (show st)
   unless (stEnd old) $ do
-         when (stEnd st) $ do
-              logJSM I $ T.pack $ printf ">>> pc cleanup: %s"
-                                         (sss 8 $ _conn_remote c)
-              mapM_ (\pc -> do logJSM I $ T.pack $ printf ">>> pc close: %s"
-                                                          (sss 8 $ _conn_remote c)
-                               RTCPeerConnection.close pc
-                    ) pc'
+         when (stEnd st) $ connEntryRelease ent logJSM
   _conn_st_cb c $ st
 
 data Cmd = CmdNew ConnConf |
@@ -460,7 +454,16 @@ data ConnEntry = MkConnEntry { _ce_conf :: ConnConf
                              , _ce_t0 :: UTCTime -- setup time
                              , _ce_ts :: Int64 -- last message timestamp
                              , _ce_hb :: Int64 -- last heatbeat
+                             , _ce_tid :: [ThreadId]
                              }
+
+connEntryRelease :: HasCallStack => ConnEntry -> LogJSM -> JSM ()
+connEntryRelease ent logJSM = do
+  logJSM I $ T.pack $ printf ">>> release: %s"
+             (sss 8 $ _conn_remote $ _ce_conf ent)
+  mapM_ RTCPeerConnection.close (_ce_pc ent)
+  mapM_ killThread (_ce_tid ent)
+  return ()
 
 {-# NOINLINE _cmdChan #-}
 _cmdChan :: TChan (NID, Cmd)
@@ -498,7 +501,22 @@ connRun ctx m ch logJSM = do
 
               t0 <- liftIO getCurrentTime
 
-              let ent = MkConnEntry c Nothing Nothing ConnIdle t0 (-1) 0
+
+              -- NOTE: here will have race condition,
+              -- when tid1 send CmdTimeout* just before
+              -- be killed in connEntryRelease
+              tid1 <- liftIO $ forkIO $ do
+              -- should become ConnSignal within _cc_conn_req_timeout
+                 threadDelay $ (_cc_conn_req_timeout confConst) * 1000 * 1000
+                 sendCmdIO nid CmdTimeoutS
+
+                 -- then, should finish Signal within _cc_conn_signal_timeout
+                 threadDelay $ (_cc_conn_signal_timeout confConst) * 1000 * 1000
+                 sendCmdIO nid CmdTimeoutC
+
+                 return ()
+
+              let ent = MkConnEntry c Nothing Nothing ConnIdle t0 (-1) 0 [tid1]
               let m' = Map.insert nid ent m
 
               -- should updateSt, make outside known connection exist
@@ -680,22 +698,8 @@ connNew :: (MonadJSM m, HasCallStack) => ConnConf -> LogJSM -> m Conn
 connNew c logJSM = do
   let ch = _cmdChan
   let rid = _conn_remote c
+
   liftIO $ sendCmdIO rid (CmdNew c)
-
-  -- TODO, should recv RTCRes in 5sec
-  -- NOTE: only 1 timeout/fail should output
-  -- or there will be race condition.
-  ctx <- liftJSM askJSM
-  liftIO $ forkIO $ do
-    -- should become ConnSignal within 10sec
-    threadDelay $ (_cc_conn_req_timeout confConst) * 1000 * 1000
-    sendCmdIO rid CmdTimeoutS
-
-    -- then, should finish Signal within 30sec
-    threadDelay $ (_cc_conn_signal_timeout confConst) * 1000 * 1000
-    sendCmdIO rid CmdTimeoutC
-
-    return ()
 
   return MkConn { _conn_tx_cb = \x -> sendCmdIO rid (CmdTx x)
                 , _conn_rtc_rx_cb = \x -> sendCmdIO rid (CmdRtcRx x)
