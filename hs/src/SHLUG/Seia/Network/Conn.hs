@@ -24,7 +24,7 @@ import SHLUG.Seia.Log
 
 import Data.ByteString ( ByteString(..) )
 import Data.Text (Text(..))
-import Data.Word (Word64)
+import Data.Word (Word64, Word16)
 import Data.Time
 
 import Data.Binary
@@ -212,6 +212,16 @@ peerConnCfg ts = do
 
     toJSVal res
 
+dcInit :: JSM DOM.RTCDataChannelInit
+dcInit = do
+  x <- obj
+  (x <# "ordered") False
+  --(obj <# "maxPacketLifeTime") 1
+  (x <# "maxRetransmits") (0 :: Word16)
+
+  DOM.RTCDataChannelInit <$> toJSVal x
+
+
 createConnection :: HasCallStack =>
                     ConnEntry -> LogJSM -> Maybe JSVal -> JSM ConnEntry
 createConnection ent logJSM remoteSdp = do
@@ -254,7 +264,8 @@ createConnection ent logJSM remoteSdp = do
 
   logJSM D $ T.pack $ printf "--- t3"
 
-  when isOffer $ do dc <- DOM.createDataChannel pc "ch0" Nothing
+  when isOffer $ do init <- dcInit
+                    dc <- DOM.createDataChannel pc "ch0" (Just init)
                     setupDataChannel ent logJSM dc
                     sendCmdJSM nid (CmdPcDc dc)
 

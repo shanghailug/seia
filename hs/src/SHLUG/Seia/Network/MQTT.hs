@@ -66,7 +66,7 @@ data MQTT t = MkMQTT { _mqtt_state :: Dynamic t MQTTState
                      }
 
 topicPrefix :: Text
-topicPrefix = T.pack "seia的频道_"
+topicPrefix = T.pack "seia的频道_2"
 
 topicGen :: NID -> Text
 topicGen nid = topicPrefix <> T.pack "/" <> T.pack (show nid)
