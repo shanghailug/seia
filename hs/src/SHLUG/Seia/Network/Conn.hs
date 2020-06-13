@@ -167,7 +167,6 @@ data ConnConf = MkConnConf { _conn_local :: NID
                            , _conn_rx_cb :: (Msg, ByteString) -> JSM ()
                            , _conn_turn_server :: [Text]
                            , _conn_msg_sign :: ByteString -> ByteString
-                           , _conn_nid_exist :: Bool -- for MkRTCRes
                            , _conn_rx_cb' :: JSM () -- for status up
                            , _conn_rtt_cb :: Int -> JSM ()
                            }
@@ -287,19 +286,6 @@ createConnection ent logJSM remoteSdp = do
   else sendRTCMsg c logJSM $ MkRTCSignal RTCOffer sdp'
 
   return $ ent { _ce_pc = Just pc }
-
-{-
-TODO, leave to open
-checkDC :: HasCallStack =>
-           ConnConf -> LogJSM -> IORef ConnState -> DOM.RTCDataChannel ->
-           JSM ()
-checkDC c logJSM stRef dc = do
-  st <- RTCDataChannel.getReadyState dc
-  when (st == Enums.RTCDataChannelStateOpen) $
-    updateSt c logJSM stRef undefined $ ConnReady (_conn_type c)
-  logJSM D $ T.pack $ printf "dc st -> %s" (show st)
-  return ()
--}
 
 onRTCRx :: HasCallStack =>
            ConnEntry -> LogJSM -> (Word64, RTCMsg) -> JSM (Maybe ConnEntry)
@@ -649,7 +635,10 @@ connProc CmdDcClose nid ent logJSM = do
 
 -- signal timeout, if we still in ConnIdle, then fail
 connProc CmdTimeoutS nid ent logJSM = do
-  if _ce_st ent == ConnIdle
+  let st = _ce_st ent
+  logJSM D $ T.pack $ printf "cmd:timeouts:%s: %s"
+                             (sss 8 nid) (show st)
+  if st == ConnIdle
   then updateSt ent logJSM ConnTimeout >> return Nothing
   else return $ Just ent
 

@@ -312,7 +312,6 @@ connManNew c = do
                          , _conn_rtt_cb = liftIO . rttT . (src,)
                          , _conn_turn_server = ts
                          , _conn_msg_sign = conn_msg_sign
-                         , _conn_nid_exist = Map.member src rtbl -- req node exist?
                          }
                 -- should only create new Conn for MsgRTCReq
                 case rmsg of
@@ -393,7 +392,6 @@ connManNew c = do
                                  , _conn_rtt_cb = liftIO . rttT . (dst,)
                                  , _conn_turn_server = ts
                                  , _conn_msg_sign = conn_msg_sign
-                                 , _conn_nid_exist = False -- always F for client
                                  } logJSM
       liftIO $ stT (dst, Left conn)
 
