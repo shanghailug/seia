@@ -283,8 +283,8 @@ createConnection ent logJSM remoteSdp = do
 
   logJSM D $ T.pack $ printf "--- t8"
   if isJust remoteSdp
-  then sendRTCMsg c $ MkRTCSignal RTCAnswer sdp'
-  else sendRTCMsg c $ MkRTCSignal RTCOffer sdp'
+  then sendRTCMsg c logJSM $ MkRTCSignal RTCAnswer sdp'
+  else sendRTCMsg c logJSM $ MkRTCSignal RTCOffer sdp'
 
   return $ ent { _ce_pc = Just pc }
 
@@ -304,27 +304,28 @@ checkDC c logJSM stRef dc = do
 onRTCRx :: HasCallStack =>
            ConnEntry -> LogJSM -> (Word64, RTCMsg) -> JSM (Maybe ConnEntry)
 onRTCRx ent logJSM (epoch, msg) = do
-  logJSM D $ T.pack $ printf "on rtc rx: %s" (sss 50 msg)
   let c = _ce_conf ent
   let st = _ce_st ent
   let tp = _conn_type c
   let pc' = _ce_pc ent
   let rstr = sss 8 $ _conn_remote c
 
+  logJSM D $ T.pack $ printf "rtc:rx:%s: %s" rstr (sss 50 msg)
+
   case (msg, tp, st) of
     (MkRTCReq ver, ConnIsServer, ConnIdle) ->
       if ver /= _conn_main_ver c
-      then do sendRTCMsg c (MkRTCRes RTCMsgResIncompatiable)
+      then do sendRTCMsg c logJSM (MkRTCRes RTCMsgResIncompatiable)
               updateSt ent logJSM ConnFail
               return $ Nothing
-      else do sendRTCMsg c (MkRTCRes RTCMsgResOK)
+      else do sendRTCMsg c logJSM (MkRTCRes RTCMsgResOK)
               let st' = ConnSignal
               updateSt ent logJSM st'
               return $ Just $ ent { _ce_st = st' }
 
     -- in none idle state
     (MkRTCReq ver, ConnIsServer, _) ->
-      do sendRTCMsg c (MkRTCRes RTCMsgResExist)
+      do sendRTCMsg c logJSM (MkRTCRes RTCMsgResExist)
          return $ Just ent
 
     (MkRTCRes res, ConnIsClient, ConnIdle) ->
@@ -417,8 +418,11 @@ setupDataChannel ent logJSM dc = do
   return ()
 
 
-sendRTCMsg :: HasCallStack => ConnConf -> RTCMsg -> JSM ()
-sendRTCMsg c rmsg = do
+sendRTCMsg :: HasCallStack => ConnConf -> LogJSM -> RTCMsg -> JSM ()
+sendRTCMsg c logJSM rmsg = do
+  logJSM D $ T.pack $ printf "rtc:tx:%s: %s" (sss 8 $ _conn_remote c)
+                                             (sss 50 rmsg)
+
   let msg = MsgSigned { _msg_src = _conn_local c
                       , _msg_dst = _conn_remote c
                       , _msg_epoch = 0
@@ -429,6 +433,7 @@ sendRTCMsg c rmsg = do
   let dat = (_conn_msg_sign c) (toStrict $ encode msg1)
   let sig = msgGetSignature dat
   let msg2 = msg1 { _msg_sign = sig }
+
   (_conn_rx_cb c) (msg2, dat)
 
 updateSt :: HasCallStack => ConnEntry -> LogJSM -> ConnState -> JSM ()
@@ -503,7 +508,7 @@ connRun ctx m ch logJSM = do
 
               -- init rtc request to remote node
               when (_conn_type c == ConnIsClient) $
-                   sendRTCMsg c $ MkRTCReq (_conn_main_ver c)
+                   sendRTCMsg c logJSM $ MkRTCReq (_conn_main_ver c)
 
               t0 <- liftIO getCurrentTime
 
@@ -564,7 +569,7 @@ connProc (CmdPcIce can) nid ent logJSM = do
                         valToStr)
   let msg = MkRTCSignal RTCCandidate can'
   done <- valIsNull can
-  when (not done) $ sendRTCMsg c msg
+  when (not done) $ sendRTCMsg c logJSM msg
 
   return $ Just ent
 
@@ -651,6 +656,9 @@ connProc CmdTimeoutS nid ent logJSM = do
 -- connect timeout, if we still in ConnIdle or ConnSignal
 connProc CmdTimeoutC nid ent logJSM = do
   let st = _ce_st ent
+  logJSM D $ T.pack $ printf "cmd:timeoutc:%s: %s"
+                             (sss 8 nid) (show st)
+
   if (st == ConnIdle) || (st == ConnSignal)
   then updateSt ent logJSM ConnTimeout >> return Nothing
   else return $ Just ent
