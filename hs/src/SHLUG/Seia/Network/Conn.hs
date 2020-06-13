@@ -698,16 +698,13 @@ connNew c logJSM = do
   -- or there will be race condition.
   ctx <- liftJSM askJSM
   liftIO $ forkIO $ do
-    let timeout t = do sendCmdIO rid t
-                       myThreadId >>= killThread
-
     -- should become ConnSignal within 10sec
     threadDelay $ (_cc_conn_req_timeout confConst) * 1000 * 1000
-    timeout CmdTimeoutS
+    sendCmdIO rid CmdTimeoutS
 
     -- then, should finish Signal within 30sec
     threadDelay $ (_cc_conn_signal_timeout confConst) * 1000 * 1000
-    timeout CmdTimeoutC
+    sendCmdIO rid CmdTimeoutC
 
     return ()
 
