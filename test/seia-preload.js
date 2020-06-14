@@ -164,7 +164,7 @@ module.exports.load = load;
 
 },{"./store":6}],3:[function(require,module,exports){
 // update when update seia-SEQ.js
-SEQ = 14;
+SEQ = 15;
 
 // min seq we can accept
 SEQ_MIN = 14;
