@@ -171,8 +171,6 @@ connManNew c = do
   logEnv <- ask
   let logJSM sev msg = logIOM' logEnv sev msg
 
-  -- start conn proc thread
-  connInit logJSM
   ------------------------ event & behavior declare
 
   -- msg collect from Conn or MQTT, verified
@@ -207,6 +205,8 @@ connManNew c = do
   -- utils
   let conn_msg_sign = msgSign (_conf_priv_key conf)
 
+  -- start conn proc thread
+  connInit logJSM conn_msg_sign
 
   ------------------ mqtt rx
   performEvent_ $ ffor mqtt_rxE $ \raw ->
@@ -311,13 +311,12 @@ connManNew c = do
                          , _conn_rx_cb' = liftIO $ rxT' src
                          , _conn_rtt_cb = liftIO . rttT . (src,)
                          , _conn_turn_server = ts
-                         , _conn_msg_sign = conn_msg_sign
                          }
                 -- should only create new Conn for MsgRTCReq
                 case rmsg of
                   MkRTCReq _ -> do liftIO $ stT (src, Left connDummy)
                                    -- ^ avoid race condition
-                                   conn <- connNew cc logJSM
+                                   conn <- connNew cc
                                    liftIO $ stT (src, Left conn)
                                    liftJSM $ (_conn_rtc_rx_cb conn)
                                              (_msg_epoch msg, rmsg)
@@ -391,8 +390,7 @@ connManNew c = do
                                  , _conn_rx_cb' = liftIO $ rxT' dst
                                  , _conn_rtt_cb = liftIO . rttT . (dst,)
                                  , _conn_turn_server = ts
-                                 , _conn_msg_sign = conn_msg_sign
-                                 } logJSM
+                                 }
       liftIO $ stT (dst, Left conn)
 
     return ()

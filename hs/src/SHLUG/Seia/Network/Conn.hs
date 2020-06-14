@@ -41,12 +41,13 @@ import Control.Monad.IO.Class (MonadIO(..), liftIO)
 import Control.Monad.Catch (MonadCatch, catch)
 import Control.Exception (SomeException)
 import Control.Lens ((^.))
-import Control.Monad (when, unless, forM_)
+import Control.Monad (when, unless, forM_, forever)
 
 import Control.Monad.Trans.Maybe (runMaybeT, MaybeT(..))
 
 import Control.Concurrent (forkIO, threadDelay, myThreadId, killThread, ThreadId)
 import Control.Concurrent.STM.TChan
+import Control.Concurrent.STM.TVar
 
 import Data.IORef
 import qualified Data.Text as T
@@ -166,7 +167,6 @@ data ConnConf = MkConnConf { _conn_local :: NID
                            -- or from this node, for RTC
                            , _conn_rx_cb :: (Msg, ByteString) -> JSM ()
                            , _conn_turn_server :: [Text]
-                           , _conn_msg_sign :: ByteString -> ByteString
                            , _conn_rx_cb' :: JSM () -- for status up
                            , _conn_rtt_cb :: Int -> JSM ()
                            }
@@ -223,8 +223,9 @@ dcInit = do
 
 
 createConnection :: HasCallStack =>
-                    ConnEntry -> LogJSM -> Maybe JSVal -> JSM ConnEntry
-createConnection ent logJSM remoteSdp = do
+                    ConnEntry -> ConnResource -> Maybe JSVal -> JSM ConnEntry
+createConnection ent res remoteSdp = do
+  let logJSM = _cr_log res
   let c = _ce_conf ent
   let nid = _conn_remote c
   logJSM D $ T.pack $ printf "--- t1"
@@ -248,7 +249,7 @@ createConnection ent logJSM remoteSdp = do
      liftJSM $ do
              -- NOTE: should setup dc(callback) as soon as possible
              -- should not insert any IO op between
-             setupDataChannel ent logJSM dc
+             setupDataChannel ent res dc
              sendCmdJSM nid (CmdPcDc dc)
              logJSM D $ T.pack $ printf "%s: on data channel" (sss 8 nid)
 
@@ -266,7 +267,7 @@ createConnection ent logJSM remoteSdp = do
 
   when isOffer $ do init <- dcInit
                     dc <- DOM.createDataChannel pc "ch0" (Just init)
-                    setupDataChannel ent logJSM dc
+                    setupDataChannel ent res dc
                     sendCmdJSM nid (CmdPcDc dc)
 
   logJSM D $ T.pack $ printf "--- t4"
@@ -293,14 +294,15 @@ createConnection ent logJSM remoteSdp = do
 
   logJSM D $ T.pack $ printf "--- t8"
   if isJust remoteSdp
-  then sendRTCMsg c logJSM $ MkRTCSignal RTCAnswer sdp'
-  else sendRTCMsg c logJSM $ MkRTCSignal RTCOffer sdp'
+  then sendRTCMsg c res $ MkRTCSignal RTCAnswer sdp'
+  else sendRTCMsg c res $ MkRTCSignal RTCOffer sdp'
 
   return $ ent { _ce_pc = Just pc }
 
 onRTCRx :: HasCallStack =>
-           ConnEntry -> LogJSM -> (Word64, RTCMsg) -> JSM (Maybe ConnEntry)
-onRTCRx ent logJSM (epoch, msg) = do
+           ConnEntry -> ConnResource -> (Word64, RTCMsg) -> JSM (Maybe ConnEntry)
+onRTCRx ent res (epoch, msg) = do
+  let logJSM = _cr_log res
   let c = _ce_conf ent
   let st = _ce_st ent
   let tp = _conn_type c
@@ -312,29 +314,29 @@ onRTCRx ent logJSM (epoch, msg) = do
   case (msg, tp, st) of
     (MkRTCReq ver, ConnIsServer, ConnIdle) ->
       if ver /= _conn_main_ver c
-      then do sendRTCMsg c logJSM (MkRTCRes RTCMsgResIncompatiable)
-              updateSt ent logJSM ConnFail
+      then do sendRTCMsg c res (MkRTCRes RTCMsgResIncompatiable)
+              updateSt ent res ConnFail
               return $ Nothing
-      else do sendRTCMsg c logJSM (MkRTCRes RTCMsgResOK)
+      else do sendRTCMsg c res (MkRTCRes RTCMsgResOK)
               let st' = ConnSignal
-              updateSt ent logJSM st'
+              updateSt ent res st'
               return $ Just $ ent { _ce_st = st' }
 
     -- in none idle state
     (MkRTCReq ver, ConnIsServer, _) ->
-      do sendRTCMsg c logJSM (MkRTCRes RTCMsgResExist)
+      do sendRTCMsg c res (MkRTCRes RTCMsgResExist)
          return $ Just ent
 
-    (MkRTCRes res, ConnIsClient, ConnIdle) ->
-      if (res == RTCMsgResIncompatiable) ||
-         (res == RTCMsgResExist)
-      then do updateSt ent logJSM ConnFail
-              logJSM W $ T.pack $ "rtc req fail: " ++ show res
+    (MkRTCRes res1, ConnIsClient, ConnIdle) ->
+      if (res1 == RTCMsgResIncompatiable) ||
+         (res1 == RTCMsgResExist)
+      then do updateSt ent res ConnFail
+              logJSM W $ T.pack $ "rtc req fail: " ++ show res1
               return Nothing
       else do let st' = ConnSignal
               let ent' = ent { _ce_st = st' }
-              updateSt ent logJSM st'
-              ent'' <- createConnection ent' logJSM Nothing
+              updateSt ent res st'
+              ent'' <- createConnection ent' res Nothing
               return $ Just ent''
 
     (MkRTCSignal tp str, _, ConnSignal) ->
@@ -345,7 +347,7 @@ onRTCRx ent logJSM (epoch, msg) = do
          case (tp, pc', _conn_type c) of
            (RTCOffer,  Nothing, ConnIsServer) -> do
              logJSM D $ T.pack $ printf "webrtc:off:%s -> %s" rstr str
-             ent' <- createConnection ent logJSM (Just jv)
+             ent' <- createConnection ent res (Just jv)
              return $ Just ent'
 
            -- ignore redundant offer
@@ -364,7 +366,7 @@ onRTCRx ent logJSM (epoch, msg) = do
              return $ Just ent
 
            _ -> do logJSM W $ T.pack $ "pc is not exist or connection type incorrect"
-                   updateSt ent logJSM ConnFail
+                   updateSt ent res ConnFail
                    return Nothing
 
     _ -> do logJSM W $ T.pack "wrong type of message"
@@ -384,11 +386,12 @@ heartbeatPkt = do
 
 setupDataChannel :: HasCallStack =>
                     ConnEntry ->
-                    LogJSM ->
+                    ConnResource ->
                     DOM.RTCDataChannel -> JSM ()
-setupDataChannel ent logJSM dc = do
+setupDataChannel ent res dc = do
   let c = _ce_conf ent
   let nid = _conn_remote c
+  let logJSM = _cr_log res
 
   DOM.on dc RTCDataChannel.open $ liftIO $ sendCmdIO nid CmdDcOpen
 
@@ -415,8 +418,9 @@ setupDataChannel ent logJSM dc = do
   return ()
 
 
-sendRTCMsg :: HasCallStack => ConnConf -> LogJSM -> RTCMsg -> JSM ()
-sendRTCMsg c logJSM rmsg = do
+sendRTCMsg :: HasCallStack => ConnConf -> ConnResource -> RTCMsg -> JSM ()
+sendRTCMsg c res rmsg = do
+  let logJSM = _cr_log res
   logJSM D $ T.pack $ printf "rtc:tx:%s: %s" (sss 8 $ _conn_remote c)
                                              (sss 50 rmsg)
 
@@ -427,21 +431,22 @@ sendRTCMsg c logJSM rmsg = do
                       , _msg_sign = emptySign
                       }
   msg1 <- msgFillEpoch msg
-  let dat = (_conn_msg_sign c) (toStrict $ encode msg1)
+  let dat = (_cr_msg_sign res) (toStrict $ encode msg1)
   let sig = msgGetSignature dat
   let msg2 = msg1 { _msg_sign = sig }
 
   (_conn_rx_cb c) (msg2, dat)
 
-updateSt :: HasCallStack => ConnEntry -> LogJSM -> ConnState -> JSM ()
-updateSt ent logJSM st = do
+updateSt :: HasCallStack => ConnEntry -> ConnResource -> ConnState -> JSM ()
+updateSt ent res st = do
+  let logJSM = _cr_log res
   let c = _ce_conf ent
   let old = _ce_st ent
   let pc' = _ce_pc ent
   logJSM D $ T.pack $ printf "webrtc:st:%s -> %s => %s" (sss 8 $ _conn_remote c)
                              (show old) (show st)
   unless (stEnd old) $ do
-         when (stEnd st) $ connEntryRelease ent logJSM
+         when (stEnd st) $ connEntryRelease ent res
   _conn_st_cb c $ st
 
 data Cmd = CmdNew ConnConf |
@@ -468,9 +473,15 @@ data ConnEntry = MkConnEntry { _ce_conf :: ConnConf
                              , _ce_tid :: [ThreadId]
                              }
 
-connEntryRelease :: HasCallStack => ConnEntry -> LogJSM -> JSM ()
-connEntryRelease ent logJSM = do
-  logJSM I $ T.pack $ printf ">>> release: %s"
+data ConnResource = MkConnResource { _cr_log :: LogJSM
+                                   , _cr_msg_sign :: ByteString -> ByteString
+                                   , _cr_ts :: TVar Int64 -- current ms, every 10ms
+                                   }
+
+
+connEntryRelease :: HasCallStack => ConnEntry -> ConnResource -> JSM ()
+connEntryRelease ent res = do
+  (_cr_log res) I $ T.pack $ printf ">>> release: %s"
              (sss 8 $ _conn_remote $ _ce_conf ent)
   mapM_ RTCPeerConnection.close (_ce_pc ent)
   mapM_ killThread (_ce_tid ent)
@@ -489,8 +500,9 @@ sendCmdJSM nid cmd = liftIO $ sendCmdIO nid cmd
 -- TODO: make outside directly observe 'Map NID ConnEntry'
 connRun :: (HasCallStack) =>
            JSContextRef -> Map NID ConnEntry ->
-           TChan (NID, Cmd) -> LogJSM -> JSM ()
-connRun ctx m ch logJSM = do
+           TChan (NID, Cmd) -> ConnResource -> JSM ()
+connRun ctx m ch res = do
+   let logJSM = _cr_log res
    (nid, cmd) <- atomically (readTChan _cmdChan)
    let ent' = Map.lookup nid m
    case (ent', cmd) of
@@ -499,7 +511,7 @@ connRun ctx m ch logJSM = do
               logJSM I $ T.pack $ printf "conn skip: %s -> %s"
                                          (sss 8 $ _conn_local c)
                                          (sss 8 $ _conn_remote c)
-              connRun ctx m ch logJSM
+              connRun ctx m ch res
         -- connection new
         (Nothing, CmdNew c) -> do
               logJSM I $ T.pack $ printf "conn new: %s -> %s"
@@ -508,7 +520,7 @@ connRun ctx m ch logJSM = do
 
               -- init rtc request to remote node
               when (_conn_type c == ConnIsClient) $
-                   sendRTCMsg c logJSM $ MkRTCReq (_conn_main_ver c)
+                   sendRTCMsg c res $ MkRTCReq (_conn_main_ver c)
 
               t0 <- liftIO getCurrentTime
 
@@ -531,30 +543,42 @@ connRun ctx m ch logJSM = do
               let m' = Map.insert nid ent m
 
               -- should updateSt, make outside known connection exist
-              updateSt ent logJSM ConnIdle
+              updateSt ent res ConnIdle
 
-              connRun ctx m' ch logJSM
+              connRun ctx m' ch res
 
         (Just ent, _) -> do
-              e <- runJSM (connProc cmd nid ent logJSM) ctx
+              e <- runJSM (connProc cmd nid ent res) ctx
               let m' = Map.update (const e) nid m
-              connRun ctx m' ch logJSM
+              connRun ctx m' ch res
 
         (Nothing, _) -> do
               logJSM I $ T.pack $ printf "skip cmd: %s" (sss 8 nid)
-              connRun ctx m ch logJSM
+              connRun ctx m ch res
 
-connInit :: (MonadJSM m, HasCallStack) => LogJSM -> m ()
-connInit logJSM = do
+connInit :: (MonadJSM m, HasCallStack) =>
+            LogJSM -> (ByteString -> ByteString) -> m ()
+connInit logJSM msgSignFunc = do
+  t0 <- liftIO getEpochMs
+  ts <- liftIO $ newTVarIO t0
+  liftIO $ forkIO $ forever do t <- liftIO getEpochMs
+                               atomically $ writeTVar ts t
+                               threadDelay (10 * 1000)
+
+  let res = MkConnResource { _cr_log = logJSM
+                           , _cr_ts = ts
+                           , _cr_msg_sign = msgSignFunc
+                           }
   ctx <- liftJSM askJSM
-  liftIO $ forkIO $ connRun ctx Map.empty _cmdChan logJSM
+  liftIO $ forkIO $ connRun ctx Map.empty _cmdChan res
   return ()
 
 connProc :: (HasCallStack) =>
-            Cmd -> NID -> ConnEntry -> LogJSM -> JSM (Maybe ConnEntry)
+            Cmd -> NID -> ConnEntry -> ConnResource -> JSM (Maybe ConnEntry)
 
 -- tx
-connProc (CmdTx payload) nid ent logJSM = do
+connProc (CmdTx payload) nid ent res = do
+  let logJSM = _cr_log res
   let c = _ce_conf ent
   let dc' = _ce_dc ent
 
@@ -575,30 +599,33 @@ connProc (CmdTx payload) nid ent logJSM = do
   return $ Just ent
 
 -- rtc rx
-connProc (CmdRtcRx x) nid ent logJSM = onRTCRx ent logJSM x
+connProc (CmdRtcRx x) nid ent res = onRTCRx ent res x
 
 -- pc candidate
-connProc (CmdPcIce can) nid ent logJSM = do
+connProc (CmdPcIce can) nid ent res = do
+  let logJSM = _cr_log res
   let c = _ce_conf ent
   can' <- strToText <$> (js_rt ^. js "JSON"  ^. js1 "stringify" can >>=
                         valToStr)
   let msg = MkRTCSignal RTCCandidate can'
   done <- valIsNull can
-  when (not done) $ sendRTCMsg c logJSM msg
+  when (not done) $ sendRTCMsg c res msg
 
   return $ Just ent
 
 -- pc datachannel
-connProc (CmdPcDc dc) nid ent logJSM = do
+connProc (CmdPcDc dc) nid ent res = do
+  let logJSM = _cr_log res
   t0 <- liftIO getCurrentTime
   return $ Just ent { _ce_dc = Just dc, _ce_t0 = t0 }
 
 -- dc open
-connProc CmdDcOpen nid ent logJSM = do
+connProc CmdDcOpen nid ent res = do
+  let logJSM = _cr_log res
   let c = _ce_conf ent
   let st' = ConnReady $ _conn_type c
   let dc' = _ce_dc ent
-  updateSt ent logJSM st'
+  updateSt ent res st'
 
   ts' <- liftIO $ getEpochMs -- Int
   logJSM I $ T.pack $ printf "%s: data channel open" (show nid)
@@ -614,7 +641,8 @@ connProc CmdDcOpen nid ent logJSM = do
   return $ Just ent { _ce_ts = ts', _ce_st = st' }
 
 -- dc message
-connProc (CmdDcMsg payload) nid ent logJSM = do
+connProc (CmdDcMsg payload) nid ent res = do
+  let logJSM = _cr_log res
   let c = _ce_conf ent
   let dc' = _ce_dc ent
   -- update timestamp
@@ -654,35 +682,36 @@ connProc (CmdDcMsg payload) nid ent logJSM = do
              return $ Just ent { _ce_ts = ts' }
 
 -- dc error
-connProc CmdDcErr nid ent logJSM = return $ Just ent
+connProc CmdDcErr nid ent res = return $ Just ent
 
 -- dc close
-connProc CmdDcClose nid ent logJSM = do
+connProc CmdDcClose nid ent res = do
   let st' = ConnFail
-  updateSt ent logJSM st'
+  updateSt ent res st'
   return Nothing
 
 -- signal timeout, if we still in ConnIdle, then fail
-connProc CmdTimeoutS nid ent logJSM = do
+connProc CmdTimeoutS nid ent res = do
+  let logJSM = _cr_log res
   let st = _ce_st ent
   logJSM D $ T.pack $ printf "cmd:timeouts:%s: %s"
                              (sss 8 nid) (show st)
   if st == ConnIdle
-  then updateSt ent logJSM ConnTimeout >> return Nothing
+  then updateSt ent res ConnTimeout >> return Nothing
   else return $ Just ent
 
 -- connect timeout, if we still in ConnIdle or ConnSignal
-connProc CmdTimeoutC nid ent logJSM = do
+connProc CmdTimeoutC nid ent res = do
   let st = _ce_st ent
-  logJSM D $ T.pack $ printf "cmd:timeoutc:%s: %s"
-                             (sss 8 nid) (show st)
+  (_cr_log res) D $ T.pack $ printf "cmd:timeoutc:%s: %s"
+                                    (sss 8 nid) (show st)
 
   if (st == ConnIdle) || (st == ConnSignal)
-  then updateSt ent logJSM ConnTimeout >> return Nothing
+  then updateSt ent res ConnTimeout >> return Nothing
   else return $ Just ent
 
 -- heart beat check
-connProc CmdHbCheck nid ent logJSM = do
+connProc CmdHbCheck nid ent res = do
   {-
   -- send heart beat,
   -- NOTE, current data channel might not in 'open' state,
@@ -698,15 +727,15 @@ connProc CmdHbCheck nid ent logJSM = do
   let ts = _ce_ts ent
 
   if now - ts > floor (_cc_conn_heartbeat_timeout confConst * 1000)
-  then updateSt ent logJSM ConnTimeout >> return Nothing
+  then updateSt ent res ConnTimeout >> return Nothing
   else liftIO (forkIO $ threadDelay (500 * 1000) >> sendCmdIO nid CmdHbCheck) >>
        return (Just ent)
 
 -- should not be called
-connProc (CmdNew _) nid ent logJSM = undefined
+connProc (CmdNew _) nid ent res = undefined
 
-connNew :: (MonadJSM m, HasCallStack) => ConnConf -> LogJSM -> m Conn
-connNew c logJSM = do
+connNew :: (MonadJSM m, HasCallStack) => ConnConf -> m Conn
+connNew c = do
   let ch = _cmdChan
   let rid = _conn_remote c
 
