@@ -512,7 +512,7 @@ runHeartbeat nid dc hb res = do
 
 runHeartbeat1 nid dc hb_r res pkt = do
   let ts = _cr_ts res
-  let to = 3000
+  let to = floor (_cc_conn_heartbeat_timeout confConst * 1000)
   t0 <- liftIO getEpochMs
   -- read from hb_r, or timeout in 3 sec
   -- remote and local node will add totally 500ms x 2 delay
@@ -764,8 +764,9 @@ connProc CmdHbCheck nid ent res = do
   -- check
   now <- liftIO getEpochMs
   let ts = _ce_ts ent
-
-  if now - ts > floor (_cc_conn_heartbeat_timeout confConst * 1000)
+  let to = _cc_conn_heartbeat_timeout confConst
+  let n = _cc_conn_heartbeat_max_loss confConst
+  if now - ts > floor (to * 1000 * fromIntegral n)
   then updateSt ent res ConnTimeout >> return Nothing
   else liftIO (forkIO $ threadDelay (500 * 1000) >> sendCmdIO nid CmdHbCheck) >>
        return (Just ent)
