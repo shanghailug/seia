@@ -103,13 +103,13 @@ let
         sha1 = "4701a51266f06e06eaa71fc17233822d875f4908";
       };
     };
-    "chownr-1.1.3" = {
+    "chownr-1.1.4" = {
       name = "chownr";
       packageName = "chownr";
-      version = "1.1.3";
+      version = "1.1.4";
       src = fetchurl {
-        url = "https://registry.npmjs.org/chownr/-/chownr-1.1.3.tgz";
-        sha512 = "i70fVHhmV3DtTl6nqvZOnIjbY0Pe4kAUjwHj8z0zAdgBtYrJyYwLKCCuRBQ5ppkyL0AkN7HKRnETdmdp1zqNXw==";
+        url = "https://registry.npmjs.org/chownr/-/chownr-1.1.4.tgz";
+        sha512 = "jJ0bqzaylmJtVnNgzTeSOs8DPavpbYgEr/b0YL8/2GO3xJEhInFmhKMUnEJQjZumK7KXGFhUy89PrsJWlakBVg==";
       };
     };
     "code-point-at-1.1.0" = {
@@ -319,13 +319,13 @@ let
         sha512 = "fjquC59cD7CyW6urNXK0FBufkZcoiGG80wTuPujX590cB5Ttln20E2UB4S/WARVqhXffZl2LNgS+gQdPIIim/g==";
       };
     };
-    "fast-text-encoding-1.0.0" = {
+    "fast-text-encoding-1.0.2" = {
       name = "fast-text-encoding";
       packageName = "fast-text-encoding";
-      version = "1.0.0";
+      version = "1.0.2";
       src = fetchurl {
-        url = "https://registry.npmjs.org/fast-text-encoding/-/fast-text-encoding-1.0.0.tgz";
-        sha512 = "R9bHCvweUxxwkDwhjav5vxpFvdPGlVngtqmx4pIZfSUhM/Q4NiIUHB456BAf+Q1Nwu3HEZYONtu+Rya+af4jiQ==";
+        url = "https://registry.npmjs.org/fast-text-encoding/-/fast-text-encoding-1.0.2.tgz";
+        sha512 = "5rQdinSsycpzvAoHga2EDn+LRX1d5xLFsuNG0Kg61JrAT/tASXcLL0nf/33v+sAxlQcfYmWbTURa1mmAf55jGw==";
       };
     };
     "fs-minipass-1.2.7" = {
@@ -571,22 +571,13 @@ let
         sha512 = "yJHVQEhyqPLUTgt9B83PXu6W3rx4MvvHvSUvToogpwoGDOUQ+yDrR0HRot+yOCdCO7u4hX3pWft6kWBBcqh0UA==";
       };
     };
-    "minimist-0.0.8" = {
+    "minimist-1.2.5" = {
       name = "minimist";
       packageName = "minimist";
-      version = "0.0.8";
+      version = "1.2.5";
       src = fetchurl {
-        url = "https://registry.npmjs.org/minimist/-/minimist-0.0.8.tgz";
-        sha1 = "857fcabfc3397d2625b8228262e86aa7a011b05d";
-      };
-    };
-    "minimist-1.2.0" = {
-      name = "minimist";
-      packageName = "minimist";
-      version = "1.2.0";
-      src = fetchurl {
-        url = "https://registry.npmjs.org/minimist/-/minimist-1.2.0.tgz";
-        sha1 = "a35008b20f41383eec1fb914f4cd5df79a264284";
+        url = "https://registry.npmjs.org/minimist/-/minimist-1.2.5.tgz";
+        sha512 = "FM9nNUYrRBAELZQT3xeZQ7fmMOBg6nWNmJKTcgsJeaLstP/UODVpGsr5OhXhhXg6f+qtJ8uiZ+PUxkDWcgIXLw==";
       };
     };
     "minipass-2.9.0" = {
@@ -607,13 +598,13 @@ let
         sha512 = "6ZYMOEnmVsdCeTJVE0W9ZD+pVnE8h9Hma/iOwwRDsdQoePpoX56/8B6z3P9VNwppJuBKNRuFDRNRqRWexT9G9Q==";
       };
     };
-    "mkdirp-0.5.1" = {
+    "mkdirp-0.5.5" = {
       name = "mkdirp";
       packageName = "mkdirp";
-      version = "0.5.1";
+      version = "0.5.5";
       src = fetchurl {
-        url = "https://registry.npmjs.org/mkdirp/-/mkdirp-0.5.1.tgz";
-        sha1 = "30057438eac6cf7f8c4767f38648d6697d75c903";
+        url = "https://registry.npmjs.org/mkdirp/-/mkdirp-0.5.5.tgz";
+        sha512 = "NKmAlESf6jMGym1++R0Ra7wvhV+wFW63FaSOFPwRahvea0gMUcGUhVeAg/0BC0wiv9ih5NYPB1Wn1UEI1/L+xQ==";
       };
     };
     "mqtt-3.0.0" = {
@@ -643,13 +634,13 @@ let
         sha512 = "sGkPx+VjMtmA6MX27oA4FBFELFCZZ4S4XqeGOXCv68tT+jb3vk/RyaKWP0PTKyWtmLSM0b+adUTEvbs1PEaH2w==";
       };
     };
-    "needle-2.4.0" = {
+    "needle-2.5.0" = {
       name = "needle";
       packageName = "needle";
-      version = "2.4.0";
+      version = "2.5.0";
       src = fetchurl {
-        url = "https://registry.npmjs.org/needle/-/needle-2.4.0.tgz";
-        sha512 = "4Hnwzr3mi5L97hMYeNl8wRW/Onhy4nUKR/lVemJ8gJedxxUyBLm9kkrDColJvoSfwi0jCNhD+xCdOtiGDQiRZg==";
+        url = "https://registry.npmjs.org/needle/-/needle-2.5.0.tgz";
+        sha512 = "o/qITSDR0JCyCKEQ1/1bnUXMmznxabbwi/Y4WwJElf+evwJNFNwIDMCCt5IigFVxgeGBJESLohGtIS9gEzo1fA==";
       };
     };
     "next-tick-1.0.0" = {
@@ -670,13 +661,13 @@ let
         sha512 = "Md1D3xnEne8b/HGVQkZZwV27WUi1ZRuZBij24TNaZwUPU3ZAFtvT6xxJGaUVillfmMKnn5oD1HoGsp2Ftik7SQ==";
       };
     };
-    "nopt-4.0.1" = {
+    "nopt-4.0.3" = {
       name = "nopt";
       packageName = "nopt";
-      version = "4.0.1";
+      version = "4.0.3";
       src = fetchurl {
-        url = "https://registry.npmjs.org/nopt/-/nopt-4.0.1.tgz";
-        sha1 = "d0d4685afd5415193c8c7505602d0d17cd64474d";
+        url = "https://registry.npmjs.org/nopt/-/nopt-4.0.3.tgz";
+        sha512 = "CvaGwVMztSMJLOeXPrez7fyfObdZqNUK1cPAEzLHrTybIua9pMdmmPR5YwtfNftIOMv3DPUhFaxsZMNTQO20Kg==";
       };
     };
     "npm-bundled-1.1.1" = {
@@ -940,13 +931,13 @@ let
         sha1 = "045f9782d011ae9a6803ddd382b24392b3d890f7";
       };
     };
-    "signal-exit-3.0.2" = {
+    "signal-exit-3.0.3" = {
       name = "signal-exit";
       packageName = "signal-exit";
-      version = "3.0.2";
+      version = "3.0.3";
       src = fetchurl {
-        url = "https://registry.npmjs.org/signal-exit/-/signal-exit-3.0.2.tgz";
-        sha1 = "b5fdc08f1287ea1178628e415e25132b73646c6d";
+        url = "https://registry.npmjs.org/signal-exit/-/signal-exit-3.0.3.tgz";
+        sha512 = "VUJ49FC8U1OxwZLxIbTTrDvLnf/6TDgxZcK8wxR8zs13xpx7xbG60ndBlhNrFi2EMuFRoeDoJO7wthSLq42EjA==";
       };
     };
     "split2-3.1.1" = {
@@ -1147,13 +1138,13 @@ let
         sha1 = "b5243d8f3ec1aa35f1364605bc0d1036e30ab69f";
       };
     };
-    "wrtc-0.4.3" = {
+    "wrtc-0.4.5" = {
       name = "wrtc";
       packageName = "wrtc";
-      version = "0.4.3";
+      version = "0.4.5";
       src = fetchurl {
-        url = "https://registry.npmjs.org/wrtc/-/wrtc-0.4.3.tgz";
-        sha512 = "HPPocFTrfCDdhVAsUlcToF3HVE/LDVP+ctHa3sHJzyUDH49tig5boKGPd3KRUjDHRStYxepu7XjNUbrxrhScRA==";
+        url = "https://registry.npmjs.org/wrtc/-/wrtc-0.4.5.tgz";
+        sha512 = "AEqbxwz8LX9bRrSI8UTn6bFiGj8/28nguYJ0RTk1905HZwM8Rx16D1oX0FfJHWmYHEg5XhODGcVa33d9ORHFyw==";
       };
     };
     "ws-3.3.3" = {
@@ -1210,11 +1201,11 @@ let
       sources."brace-expansion-1.1.11"
       sources."buffer-from-1.1.1"
       sources."callback-stream-1.1.0"
-      sources."chownr-1.1.3"
+      sources."chownr-1.1.4"
       sources."code-point-at-1.1.0"
       (sources."commist-1.1.0" // {
         dependencies = [
-          sources."minimist-1.2.0"
+          sources."minimist-1.2.5"
         ];
       })
       sources."concat-map-0.0.1"
@@ -1226,6 +1217,7 @@ let
       sources."deep-extend-0.6.0"
       sources."delegates-1.0.0"
       sources."detect-libc-1.0.3"
+      sources."domexception-1.0.1"
       sources."duplexify-3.7.1"
       sources."end-of-stream-1.4.4"
       sources."es5-ext-0.10.53"
@@ -1244,7 +1236,7 @@ let
         ];
       })
       sources."extend-3.0.2"
-      sources."fast-text-encoding-1.0.0"
+      sources."fast-text-encoding-1.0.2"
       sources."fs-minipass-1.2.7"
       sources."fs.realpath-1.0.0"
       sources."gauge-2.7.4"
@@ -1272,21 +1264,21 @@ let
       sources."libsodium-0.7.6"
       sources."libsodium-wrappers-0.7.6"
       sources."minimatch-3.0.4"
-      sources."minimist-0.0.8"
+      sources."minimist-1.2.5"
       sources."minipass-2.9.0"
       sources."minizlib-1.3.3"
-      sources."mkdirp-0.5.1"
+      sources."mkdirp-0.5.5"
       (sources."mqtt-3.0.0" // {
         dependencies = [
-          sources."minimist-1.2.0"
+          sources."minimist-1.2.5"
         ];
       })
       sources."mqtt-packet-6.3.0"
       sources."ms-2.1.2"
-      sources."needle-2.4.0"
+      sources."needle-2.5.0"
       sources."next-tick-1.0.0"
       sources."node-pre-gyp-0.13.0"
-      sources."nopt-4.0.1"
+      sources."nopt-4.0.3"
       sources."npm-bundled-1.1.1"
       sources."npm-normalize-package-bin-1.0.1"
       sources."npm-packlist-1.4.8"
@@ -1307,11 +1299,7 @@ let
           sources."pump-2.0.1"
         ];
       })
-      (sources."rc-1.2.8" // {
-        dependencies = [
-          sources."minimist-1.2.0"
-        ];
-      })
+      sources."rc-1.2.8"
       (sources."readable-stream-2.3.7" // {
         dependencies = [
           sources."safe-buffer-5.1.2"
@@ -1325,7 +1313,7 @@ let
       sources."sax-1.2.4"
       sources."semver-5.7.1"
       sources."set-blocking-2.0.0"
-      sources."signal-exit-3.0.2"
+      sources."signal-exit-3.0.3"
       (sources."split2-3.1.1" // {
         dependencies = [
           sources."readable-stream-3.5.0"
@@ -1351,15 +1339,11 @@ let
       sources."unc-path-regex-0.1.2"
       sources."unique-stream-2.3.1"
       sources."util-deprecate-1.0.2"
+      sources."webidl-conversions-4.0.2"
       sources."websocket-stream-5.5.0"
       sources."wide-align-1.1.3"
       sources."wrappy-1.0.2"
-      (sources."wrtc-0.4.3" // {
-        dependencies = [
-          sources."domexception-1.0.1"
-          sources."webidl-conversions-4.0.2"
-        ];
-      })
+      sources."wrtc-0.4.5"
       (sources."ws-3.3.3" // {
         dependencies = [
           sources."safe-buffer-5.1.2"

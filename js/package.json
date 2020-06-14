@@ -15,7 +15,7 @@
     "libsodium-wrappers": "^0.7.6",
     "mqtt": "^3.0.0",
     "tweetnacl": "^1.0.3",
-    "wrtc": "^0.4.3",
+    "wrtc": "^0.4.5",
     "xhr2": "^0.2.0"
   }
 }

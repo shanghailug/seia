@@ -3,9 +3,9 @@
 }:
 
 let
-  wrtc_0_4_3_binary = pkgs.fetchurl {
-    url = https://node-webrtc.s3.amazonaws.com/wrtc/v0.4.3/Release/linux-x64.tar.gz;
-    sha256 = "1j4vy67v2y40928x1cfqxdfwycbc4jyvmvv8g0z76kclv11p0856";
+  wrtc_0_4_5_binary = pkgs.fetchurl {
+    url = https://node-webrtc.s3.amazonaws.com/wrtc/v0.4.5/Release/linux-x64.tar.gz;
+    sha256 = "0gnc9fyk22isxp9ybdswv009f7bj4ixfpcyf7hc26c4jw7npn57c";
   };
 
   nodePackages = import ./default.nix { inherit pkgs system; };
@@ -15,7 +15,7 @@ let
     preRebuild = ''
     pushd ./node_modules/wrtc
     mkdir -p build
-    tar -C build -xf ${wrtc_0_4_3_binary}
+    tar -C build -xf ${wrtc_0_4_5_binary}
     popd
     '';
   };
