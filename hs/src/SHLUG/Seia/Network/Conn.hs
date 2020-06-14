@@ -48,6 +48,7 @@ import Control.Monad.Trans.Maybe (runMaybeT, MaybeT(..))
 import Control.Concurrent (forkIO, threadDelay, myThreadId, killThread, ThreadId)
 import Control.Concurrent.STM.TChan
 import Control.Concurrent.STM.TVar
+import Control.Concurrent.STM.TMVar
 
 import Data.IORef
 import qualified Data.Text as T
@@ -55,7 +56,7 @@ import Data.Maybe (isNothing, isJust, fromJust)
 
 import GHC.Stack ( HasCallStack )
 
-import Control.Concurrent.STM (atomically)
+import Control.Concurrent.STM (atomically, retry)
 import System.IO.Unsafe (unsafePerformIO)
 
 import qualified System.IO as IO
@@ -469,7 +470,8 @@ data ConnEntry = MkConnEntry { _ce_conf :: ConnConf
                              , _ce_st :: ConnState
                              , _ce_t0 :: UTCTime -- setup time
                              , _ce_ts :: Int64 -- last message timestamp
-                             , _ce_hb :: Int64 -- last heatbeat
+                             , _ce_hb :: Int64 -- last heatbeat send time
+                             , _ce_hb_r :: TMVar () -- when recv heartbeat
                              , _ce_tid :: [ThreadId]
                              }
 
@@ -496,6 +498,36 @@ sendCmdIO nid cmd = atomically $ writeTChan _cmdChan (nid, cmd)
 
 sendCmdJSM :: NID -> Cmd -> JSM ()
 sendCmdJSM nid cmd = liftIO $ sendCmdIO nid cmd
+
+runHeartbeat :: HasCallStack =>
+                NID -> DOM.RTCDataChannel -> TMVar () ->
+                ConnResource -> JSM ()
+runHeartbeat nid dc hb res = do
+  -- send init pkt
+  pkt <- heartbeatPkt
+
+  sendJSVal pkt dc
+
+  runHeartbeat1 nid dc hb res pkt
+
+runHeartbeat1 nid dc hb_r res pkt = do
+  let ts = _cr_ts res
+  let to = 3000
+  t0 <- liftIO getEpochMs
+  -- read from hb_r, or timeout in 3 sec
+  -- remote and local node will add totally 500ms x 2 delay
+  -- if timeout, then resend, normally send will happend when receive HB
+  lost <- liftIO $ atomically $ do a <- tryTakeTMVar hb_r
+                                   ts1 <- readTVar ts
+                                   let b = ts1 - t0 > to
+                                   case (a, b) of
+                                        (Just _, _) -> return False
+                                        (Nothing, True) -> return True
+                                        _ -> retry
+
+  when lost $ sendJSVal pkt dc
+
+  runHeartbeat1 nid dc hb_r res pkt
 
 -- TODO: make outside directly observe 'Map NID ConnEntry'
 connRun :: (HasCallStack) =>
@@ -539,7 +571,9 @@ connRun ctx m ch res = do
 
                  return ()
 
-              let ent = MkConnEntry c Nothing Nothing ConnIdle t0 (-1) 0 [tid1]
+              hb_r <- liftIO newEmptyTMVarIO
+              let ent = MkConnEntry c Nothing Nothing ConnIdle t0 (-1) 0
+                                    hb_r [tid1]
               let m' = Map.insert nid ent m
 
               -- should updateSt, make outside known connection exist
@@ -633,12 +667,16 @@ connProc CmdDcOpen nid ent res = do
   -- heart beat check, 500ms later
   liftIO $ forkIO $ threadDelay (500 * 1000) >> sendCmdJSM nid CmdHbCheck
 
-  -- start send heartbeat from client
-  pkt <- heartbeatPkt
-  mapM_ (\dc -> when (_conn_type c == ConnIsClient) $ liftJSM $ sendJSVal pkt dc)
-        dc'
+  -- start run heartbeat thread on client
+  tid' <- case (_conn_type c, dc') of
+               (ConnIsClient, Just dc) -> do
+                 ctx <- askJSM
+                 tid1 <- liftIO $ forkIO $
+                                runJSM (runHeartbeat nid dc (_ce_hb_r ent) res) ctx
+                 return (tid1 : _ce_tid ent)
+               _ -> return $ _ce_tid ent
 
-  return $ Just ent { _ce_ts = ts', _ce_st = st' }
+  return $ Just ent { _ce_ts = ts', _ce_st = st', _ce_tid = tid' }
 
 -- dc message
 connProc (CmdDcMsg payload) nid ent res = do
@@ -659,6 +697,7 @@ connProc (CmdDcMsg payload) nid ent res = do
 
              t <- liftIO getCurrentTime
              let t0 = _ce_t0 ent
+             atomically $ tryPutTMVar (_ce_hb_r ent) ()
 
              let dt = diffUTCTime t t0
              when (floor (dt*2) `mod` 120 == 0) $
