@@ -477,7 +477,7 @@ data ConnEntry = MkConnEntry { _ce_conf :: ConnConf
 
 data ConnResource = MkConnResource { _cr_log :: LogJSM
                                    , _cr_msg_sign :: ByteString -> ByteString
-                                   , _cr_ts :: TVar Int64 -- current ms, every 10ms
+                                   , _cr_ts :: TVar Int64 -- current ms, resolution ~ 100ms
                                    }
 
 
@@ -597,7 +597,7 @@ connInit logJSM msgSignFunc = do
   ts <- liftIO $ newTVarIO t0
   liftIO $ forkIO $ forever do t <- liftIO getEpochMs
                                atomically $ writeTVar ts t
-                               threadDelay (10 * 1000)
+                               threadDelay (100 * 1000)
 
   let res = MkConnResource { _cr_log = logJSM
                            , _cr_ts = ts
